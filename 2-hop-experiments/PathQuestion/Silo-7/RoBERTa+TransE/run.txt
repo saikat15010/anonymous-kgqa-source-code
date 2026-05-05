@@ -1,0 +1,95 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 7
+  TransE + RoBERTa | 7 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client7/RoBERTa+TransE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (7-silo aware)
+  transe_model.py    — TransE KGE model (d-dimensional real embeddings)
+  server.py          — 7-silo RoBERTa server (joint_dim = 7d = 1792)
+  evaluate.py        — evaluation (7-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train TransE on all 7 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_transe.pt  ... silo_g_transe.pt   (7 checkpoints)
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+7-SILO RELATION SPLIT (Client7)
+================================================================
+
+  Silo A — Marriage    : spouse
+  Silo B — Lineage     : parents, children
+  Silo C — Vitals      : gender, cause_of_death
+  Silo D — Identity    : ethnicity, religion
+  Silo E — Citizenship : nationality
+  Silo F — Occupation  : profession, institution
+  Silo G — Places      : place_of_birth, place_of_death, location
+
+
+================================================================
+KEY ROBERTA DIFFERENCE vs BERT/DistilBERT (handled in server.py)
+================================================================
+
+  - NO token_type_ids — BPE tokenizer, not WordPiece
+  - <s> token at position 0 = sequence rep (same as [CLS])
+  - Tokenizer call: do NOT pass token_type_ids to roberta(**enc)
+  - JOINT_DIM = 7d = 1792 (unchanged)
+  - MLP: 768 -> 512 -> 1792 (unchanged)
+
+
+================================================================
+ENCODER COMPARISON (same TransE KGE, same joint_dim=7d=1792)
+================================================================
+
+  Experiment            | Encoder       | Params | Layers
+  ──────────────────────────────────────────────────────────────
+  Client7 Bert+TransE   | bert-base     |  110M  |  12
+  Client7 DistilBert+TE | distilbert    |   66M  |   6
+  Client7 RoBERTa+TE    | roberta-base  |  125M  |  12  <- THIS
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client7/RoBERTa+TransE
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+CLIENT7 ROBERTA PROGRESS
+================================================================
+
+  RoBERTa+TransE   | THIS
+  RoBERTa+DistMult | NEXT
+  RoBERTa+RotatE   | NEXT
+  RoBERTa+ComplEx  | NEXT
+
+
