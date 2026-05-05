@@ -1,0 +1,89 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 7
+  RotatE + DistilBERT | 7 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client7/DistilBert+RotatE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (7-silo aware)
+  rotate_model.py    — RotatE KGE model (2d complex embeddings)
+  server.py          — 7-silo DistilBERT server (joint_dim = 14d = 3584)
+  evaluate.py        — evaluation (7-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train RotatE on all 7 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_rotate.pt  ... silo_g_rotate.pt   (7 checkpoints)
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+7-SILO RELATION SPLIT (Client7)
+================================================================
+
+  Silo A — Marriage    : spouse
+  Silo B — Lineage     : parents, children
+  Silo C — Vitals      : gender, cause_of_death
+  Silo D — Identity    : ethnicity, religion
+  Silo E — Citizenship : nationality
+  Silo F — Occupation  : profession, institution
+  Silo G — Places      : place_of_birth, place_of_death, location
+
+
+================================================================
+CRITICAL DIMENSION DIFFERENCE vs DistilBert+TransE/DistMult
+================================================================
+
+RotatE uses 2d entity embeddings -> joint_dim DOUBLES:
+
+  Model                 | Entity dim | Joint dim   | MLP out
+  ──────────────────────────────────────────────────────────────
+  DistilBert+TransE     |   d = 256  |  7d = 1792  |  1792
+  DistilBert+DistMult   |   d = 256  |  7d = 1792  |  1792
+  DistilBert+RotatE     |  2d = 512  | 14d = 3584  |  3584 <- THIS
+  DistilBert+ComplEx    |  2d = 512  | 14d = 3584  |  3584
+
+server.py: ENTITY_DIM=512, JOINT_DIM=3584, MLP final layer -> 3584.
+All other hyperparameters identical.
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client7/DistilBert+RotatE
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+CLIENT7 DISTILBERT PROGRESS
+================================================================
+
+  DistilBert+TransE    | DONE
+  DistilBert+DistMult  | DONE
+  DistilBert+RotatE    | THIS
+  DistilBert+ComplEx   | NEXT
+
