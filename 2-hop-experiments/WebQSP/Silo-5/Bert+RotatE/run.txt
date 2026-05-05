@@ -1,0 +1,87 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 5
+  BERT + RotatE | 5 Silos | 1-2 hop | Freebase | OWL-enriched KB
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client5/Bert+RotatE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (5-silo aware)
+  rotate_model.py    — RotatE KGE model (2d complex, phase-rotation scoring)
+  server.py          — 5-silo BERT server (joint_dim = 5*2d = 2560)
+  evaluate.py        — evaluation (5-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train RotatE on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+KEY DIMENSIONS
+================================================================
+
+  KGE_EMBED_DIM  = d    = 256  (complex dimension)
+  entity_dim     = 2d   = 512
+  relation_dim   = d    = 256  (phase angles)
+  joint_dim      = 5×2d = 2560    ← 5 silos × 512
+
+  MLP: 768 → 512 → 2560
+
+
+================================================================
+CLIENT5 DIMENSION COMPARISON (all 4 KGE models)
+================================================================
+
+  KGE       entity_dim  joint_dim (5 silos)
+  ─────────────────────────────────────────
+  TransE    256         5 × 256  = 1280
+  DistMult  256         5 × 256  = 1280
+  RotatE    512         5 × 512  = 2560  ← this experiment
+  ComplEx   512         5 × 512  = 2560
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_rotate.pt
+    silo_b_rotate.pt
+    silo_c_rotate.pt
+    silo_d_rotate.pt
+    silo_e_rotate.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client5/Bert+RotatE
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT5 BERT EXPERIMENT MATRIX
+================================================================
+
+  Encoder | TransE | DistMult | RotatE  | ComplEx
+  ─────────────────────────────────────────────────
+  BERT    |  DONE  |  DONE    |  THIS ✓ |
+
+================================================================
