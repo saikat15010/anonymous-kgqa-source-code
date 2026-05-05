@@ -1,0 +1,144 @@
+================================================================
+  FedV-KGQA — DistMult + RoBERTa Experiment
+  3 Silos | 2-hop | OWL2-Enriched KB
+================================================================
+shortcut
+
+cd /home/islamm9/ISWC/Client3/RoBERTa+DistMult
+python train_kge_roberta_distmult.py
+python train_fedv_roberta_distmult.py
+
+
+Project folder : /home/islamm9/ISWC/Client3/RoBERTa+DistMult/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (unified shared dataset — no re-enrichment or re-splitting needed)
+
+
+================================================================
+KEY DIFFERENCES FROM OTHER EXPERIMENTS
+================================================================
+
+Two axes of variation — KGE model and QA encoder:
+
+  KGE model : DistMult  (bilinear scoring, φ = ⟨h, r, t⟩)
+  QA encoder: RoBERTa-base (12 layers, 125M params, 768-dim output)
+
+  Full matrix position:
+
+  Experiment          | KGE    | Encoder    | Entity dim | Joint dim
+  ──────────────────────────────────────────────────────────────────
+  Bert+TransE         | TransE | BERT(110M) |  d = 256   | 3d = 768
+  Bert+DistMult       | DM     | BERT(110M) |  d = 256   | 3d = 768
+  Bert+RotatE         | RotatE | BERT(110M) | 2d = 512   | 6d = 1536
+  Bert+ComplEx        | CX     | BERT(110M) | 2d = 512   | 6d = 1536
+  DistilBert+TransE   | TransE | DB(66M)    |  d = 256   | 3d = 768
+  DistilBert+DistMult | DM     | DB(66M)    |  d = 256   | 3d = 768
+  DistilBert+RotatE   | RotatE | DB(66M)    | 2d = 512   | 6d = 1536
+  DistilBert+ComplEx  | CX     | DB(66M)    | 2d = 512   | 6d = 1536
+  RoBERTa+TransE      | TransE | RoB(125M)  |  d = 256   | 3d = 768
+  RoBERTa+DistMult    | DM     | RoB(125M)  |  d = 256   | 3d = 768  ← THIS
+
+  DM=DistMult, DB=DistilBERT, CX=ComplEx, RoB=RoBERTa
+
+DistMult scoring: φ(h, r, t) = ⟨h, r, t⟩ = Σ h_i · r_i · t_i
+  - Bilinear diagonal model (symmetric relations only)
+  - Entity embeddings ∈ ℝᵈ (same real dim as TransE)
+  - L2-normalise entity embeddings after each gradient step
+
+RoBERTa vs BERT-base (same 768-dim output, stronger pre-training):
+  - 12 transformer layers  (identical to BERT-base)
+  - ~125M parameters       (BERT-base: ~110M)
+  - 768-dim [CLS] output   (identical → no architecture changes)
+  - Trained on 160GB text, larger batches (8K), dynamic masking, no NSP
+  - BPE tokenizer — no token_type_ids, <s> token as sequence representation
+  - Generally outperforms BERT-base on downstream NLU benchmarks
+
+All hyperparameters (KGE_EMBED_DIM=256, KGE_EPOCHS=100,
+QA_EPOCHS=30, QA_LR=1e-4, SEED=42, etc.) are identical
+across all experiments for fair comparison.
+
+
+================================================================
+PROJECT STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/                ← shared, read-only
+│   ├── kb_enriched_owl.txt
+│   ├── silos/kb_silo_{a,b,c}.txt
+│   └── qa/2-hop/qa_{train,dev,test}.txt
+│
+└── Client3/RoBERTa+DistMult/
+    ├── HOW_TO_RUN_ROBERTA_DISTMULT.txt
+    ├── config_roberta_distmult.py        ← all paths + hyperparams
+    ├── server_roberta_distmult.py        ← server with RoBERTa encoder
+    ├── evaluate_roberta_distmult.py      ← evaluation (MRR, Hits@k)
+    ├── distmult_model.py                 ← copy from Bert+DistMult
+    ├── dataset.py                        ← copy from Bert+TransE
+    ├── train_kge_roberta_distmult.py     ← run first  (Phase 1)
+    ├── train_fedv_roberta_distmult.py    ← run second (Phase 2)
+    ├── models/                           ← auto-created
+    │   ├── silo_a_distmult.pt
+    │   ├── silo_b_distmult.pt
+    │   ├── silo_c_distmult.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_roberta_distmult/            ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+FILES TO COPY FROM EXISTING EXPERIMENTS
+================================================================
+
+  # DistMult model (from Bert+DistMult)
+  cp /home/islamm9/ISWC/Client3/Bert+DistMult/distmult_model.py \
+     /home/islamm9/ISWC/Client3/RoBERTa+DistMult/
+
+  # Dataset utilities (from Bert+TransE — shared across all experiments)
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py \
+     /home/islamm9/ISWC/Client3/RoBERTa+DistMult/
+
+Do NOT copy: server.py, evaluate.py, config.py, config_distmult.py
+  (all replaced by the roberta_distmult variants in this folder)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/Client3/RoBERTa+DistMult
+
+# Step 1 — Train DistMult KGE on each silo independently
+# RoBERTa is NOT involved — KGE training is encoder-agnostic.
+# Expected: ~30-60 min on GPU  (identical to all DistMult experiments)
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_distmult.py
+
+# Step 2 — Federated QA training with RoBERTa encoder
+# Note: RoBERTa (125M) is slightly slower than BERT-base (110M)
+# Expected: ~1-2 hours on GPU
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_distmult.py
+
+
+================================================================
+EMBEDDING DIMENSIONS
+================================================================
+
+  Component          | This experiment  | Bert+DistMult  | DB+DistMult
+  ───────────────────────────────────────────────────────────────────
+  KGE_EMBED_DIM      |    256           |    256         |    256
+  Entity storage     |    256           |    256         |    256
+  h_A, h_B, h_C      |   (N,256)        |   (N,256)      |   (N,256)
+  h_joint            |   (N,768)        |   (N,768)      |   (N,768)
+  Encoder output     |   (B,768)        |   (B,768)      |   (B,768)
+  MLP output q_embed |   (B,768)        |   (B,768)      |   (B,768)
+  Gradient/silo      |   (N,256)        |   (N,256)      |   (N,256)
+  Encoder params     |   ~125M          |   ~110M        |   ~66M
+  Encoder layers     |     12           |     12         |     6
+
+
