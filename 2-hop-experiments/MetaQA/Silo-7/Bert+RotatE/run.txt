@@ -1,0 +1,3 @@
+cd /home/islamm9/ISWC/Client7/Bert+RotatE
+CUDA_VISIBLE_DEVICES=0 python train_kge_rotate.py
+CUDA_VISIBLE_DEVICES=0 python train_fedv_rotate.py
