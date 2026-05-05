@@ -1,0 +1,90 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 7
+  DistMult + DistilBERT | 7 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client7/DistilBert+DistMult
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (7-silo aware)
+  distmult_model.py  — DistMult KGE model (d-dimensional real embeddings)
+  server.py          — 7-silo DistilBERT server (joint_dim = 7d = 1792)
+  evaluate.py        — evaluation (7-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train DistMult on all 7 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_distmult.pt  ... silo_g_distmult.pt   (7 checkpoints)
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+7-SILO RELATION SPLIT (Client7)
+================================================================
+
+  Silo A — Marriage    : spouse
+  Silo B — Lineage     : parents, children
+  Silo C — Vitals      : gender, cause_of_death
+  Silo D — Identity    : ethnicity, religion
+  Silo E — Citizenship : nationality
+  Silo F — Occupation  : profession, institution
+  Silo G — Places      : place_of_birth, place_of_death, location
+
+
+================================================================
+WHAT CHANGED vs Client7/DistilBert+TransE
+================================================================
+
+  File              | Change
+  ──────────────────────────────────────────────────────────────
+  config.py         | CHECKPOINT_DIR -> DistilBert+DistMult/models
+  distmult_model.py | New — DistMult scoring <h,r,t>
+  server.py         | Unchanged (JOINT_DIM=1792, DistilBERT — same)
+  evaluate.py       | Unchanged (both use d-dim embeddings)
+  train_kge.py      | Imports DistMult, saves *_distmult.pt
+  train_fedv.py     | load_distmult(), loads *_distmult.pt
+  dataset.py        | Unchanged
+
+
+================================================================
+FULL CLIENT7 DISTILBERT EXPERIMENT MATRIX
+================================================================
+
+  Model                 | Entity dim | Joint dim   | KGE optim | Status
+  ──────────────────────────────────────────────────────────────────────────
+  DistilBert+TransE     |   d = 256  |  7d = 1792  | Adam      | DONE
+  DistilBert+DistMult   |   d = 256  |  7d = 1792  | Adam      | THIS
+  DistilBert+RotatE     |  2d = 512  | 14d = 3584  | Adam      | NEXT
+  DistilBert+ComplEx    |  2d = 512  | 14d = 3584  | Adam(wd)  | NEXT
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client7/DistilBert+DistMult
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
