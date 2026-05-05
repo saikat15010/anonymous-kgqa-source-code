@@ -1,0 +1,104 @@
+================================================================
+  FedV-KGQA — RotatE + BERT Experiment
+  3 Silos | 2-hop | OWL2-Enriched KB
+================================================================
+
+cd /home/islamm9/ISWC/Client3/Bert+RotatE
+python train_kge_rotate.py
+python train_fedv_rotate.py
+
+Project folder : /home/islamm9/ISWC/Client3/Bert+RotatE/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (shared — no re-enrichment needed)
+
+
+================================================================
+PROJECT STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/               ← shared, read-only
+│   ├── kb_enriched_owl.txt             ← already exists
+│   ├── silos/kb_silo_{a,b,c}.txt      ← already exists
+│   └── qa/2-hop/qa_{train,dev,test}.txt
+│
+└── Client3/Bert+RotatE/
+    ├── HOW_TO_RUN_ROTATE.txt
+    ├── config_rotate.py                ← paths + hyperparams
+    ├── rotate_model.py                 ← RotatE KGE model
+    ├── server_rotate.py                ← server with 6d joint dim
+    ├── evaluate_rotate.py              ← evaluation (imports config_rotate)
+    ├── dataset.py                      ← copy from Bert+TransE
+    ├── train_kge_rotate.py             ← run first
+    ├── train_fedv_rotate.py            ← run second
+    ├── models/                         ← auto-created
+    │   ├── silo_a_rotate.pt
+    │   ├── silo_b_rotate.pt
+    │   ├── silo_c_rotate.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_rotate/                    ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+KEY DIFFERENCE FROM TransE / DistMult
+================================================================
+
+RotatE represents entities in COMPLEX space:
+  entity embedding dim = 2 * KGE_EMBED_DIM  (real + imaginary)
+  h_joint = [h_A || h_B || h_C] ∈ ℝ^(6d)  (instead of 3d)
+
+This requires a dedicated server_rotate.py and evaluate_rotate.py
+that use 6d instead of 3d. All hyperparameters are otherwise
+identical for fair comparison.
+
+  Model       | Entity dim | Joint dim | Scoring
+  ────────────────────────────────────────────────
+  TransE      |     d=256  |    3d=768 | -||h+r-t||
+  DistMult    |     d=256  |    3d=768 | <h,r,t>
+  RotatE      |    2d=512  |   6d=1536 | -||h∘r-t|| (complex)
+
+
+================================================================
+FILE TO COPY FROM Bert+TransE
+================================================================
+
+Only dataset.py is needed — it has no config imports:
+
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py \
+     /home/islamm9/ISWC/Client3/Bert+RotatE/
+
+Do NOT copy: server.py, evaluate.py
+  (replaced by server_rotate.py and evaluate_rotate.py)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/Client3/Bert+RotatE
+
+# Step 1 — Train RotatE KGE on each silo (~30-60 min on GPU)
+CUDA_VISIBLE_DEVICES=1 python train_kge_rotate.py
+
+# Step 2 — Federated QA training (~1-3 hours on GPU)
+CUDA_VISIBLE_DEVICES=1 python train_fedv_rotate.py
+
+
+================================================================
+WHAT IS AUTOMATICALLY CREATED
+================================================================
+
+  models/                         created by train_kge_rotate.py
+  models/silo_{a,b,c}_rotate.pt   created by train_kge_rotate.py
+  models/shared_entity2id.json    created by train_kge_rotate.py
+  models/fedv_best.pt             created by train_fedv_rotate.py
+  logs_rotate/run_.../            created by train_kge_rotate.py
+
+
