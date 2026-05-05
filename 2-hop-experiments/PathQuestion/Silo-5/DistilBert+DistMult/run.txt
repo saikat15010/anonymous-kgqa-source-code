@@ -1,0 +1,100 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 5
+  DistMult + DistilBERT | 5 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client5/DistilBert+DistMult
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (5-silo aware)
+  distmult_model.py  — DistMult KGE model (d-dimensional real embeddings)
+  server.py          — 5-silo DistilBERT server  (joint_dim = 5d = 1280)
+  evaluate.py        — evaluation  (5-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train DistMult on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_distmult.pt
+    silo_b_distmult.pt
+    silo_c_distmult.pt
+    silo_d_distmult.pt
+    silo_e_distmult.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt
+    kge_train_log.json
+    fedv_train_log.txt
+    fedv_train_log.json
+
+
+================================================================
+SILO RELATION SPLIT (Client5)
+================================================================
+
+  Silo A — Family       : parents, children, spouse
+  Silo B — Demographics : gender, nationality
+  Silo C — Identity     : ethnicity, religion, cause_of_death
+  Silo D — Occupation   : profession, institution
+  Silo E — Places       : place_of_birth, place_of_death, location
+
+
+================================================================
+WHAT CHANGED vs OTHER Client5 EXPERIMENTS
+================================================================
+
+Compared to Client5/Bert+DistMult:     only encoder changes (DistilBERT)
+Compared to Client5/DistilBert+TransE: only KGE model changes (DistMult)
+
+  Component    | DistilBert+TransE   | DistilBert+DistMult
+  ──────────────────────────────────────────────────────────
+  KGE model    | TransE              | DistMult
+  KGE scoring  | -||h+r-t||          | <h,r,t>
+  Checkpoints  | silo_*_transe.pt    | silo_*_distmult.pt
+  Encoder      | distilbert-base     | distilbert-base  (same)
+  Joint dim    | 5d = 1280           | 5d = 1280        (same)
+  All other HP | identical           | identical
+
+
+================================================================
+DIMENSION SUMMARY FOR ALL Client5 EXPERIMENTS
+================================================================
+
+  Model                | Entity dim | Joint dim  | Encoder
+  ──────────────────────────────────────────────────────────
+  Bert+TransE          |   d = 256  |  5d = 1280 | BERT 110M
+  Bert+DistMult        |   d = 256  |  5d = 1280 | BERT 110M
+  DistilBert+TransE    |   d = 256  |  5d = 1280 | DistilBERT 66M
+  DistilBert+DistMult  |   d = 256  |  5d = 1280 | DistilBERT 66M <- THIS
+  Bert+RotatE          |  2d = 512  | 10d = 2560 | BERT 110M
+  Bert+ComplEx         |  2d = 512  | 10d = 2560 | BERT 110M
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client5/DistilBert+DistMult
+
+# Step 1: Train DistMult on each of the 5 silos independently
+# (DistilBERT not involved in KGE training)
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+# Step 2: Federated QA training with DistilBERT encoder
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
