@@ -1,0 +1,141 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment
+  TransE + BERT | 3 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client3/Bert+TransE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client3/          ← shared, read-only
+│   ├── silos/
+│   │   ├── kb_silo_a.txt               ← Family    (children, parents, spouse)
+│   │   ├── kb_silo_b.txt               ← Identity  (gender, nationality, ...)
+│   │   └── kb_silo_c.txt               ← Biog.     (place_of_birth, institution, ...)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client3/Bert+TransE/           ← this project
+    ├── HOW_TO_RUN_PQ2H.txt
+    ├── config.py                        ← all paths + hyperparams
+    ├── dataset.py                       ← PQ2H-specific data loader
+    ├── transe_model.py                  ← TransE KGE model (unchanged)
+    ├── server.py                        ← federated server (unchanged)
+    ├── evaluate.py                      ← evaluation (PQ2H answer types)
+    ├── train_kge.py                     ← run first
+    ├── train_fedv.py                    ← run second
+    ├── models/                          ← auto-created
+    │   ├── silo_a_transe.pt
+    │   ├── silo_b_transe.pt
+    │   ├── silo_c_transe.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs/                            ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+KEY DIFFERENCES FROM MetaQA EXPERIMENT
+================================================================
+
+  Aspect              MetaQA                   PQ2H
+  ──────────────────────────────────────────────────────────────
+  KB format           pipe-separated (|)       tab-separated (\t)
+  QA format           question[topic]\tanswers question\ttopic\tanswer
+  Topic extraction    regex on [brackets]      direct column read
+  Answers per line    pipe-separated (1+)      single answer
+  KB enrichment       OWL2 (12 chain axioms)   inverse triples only
+                                               (parents↔children, spouse)
+  Relations           9 (movie domain)         13 (Freebase13 persons)
+  Silo A              directed_by, wrote,...   children, parents, spouse
+  Silo B              starred_actors, tags,... gender, nationality, ...
+  Silo C              release_year, genre,...  place_of_birth, institution,...
+  QA size             ~100k train              ~1.5k train (small!)
+  Batch print freq    every 200 batches        every 50 batches
+
+
+================================================================
+SILO SPLIT (Freebase13 — 13 relations)
+================================================================
+
+  Silo A — Family relations
+    children, parents, spouse
+
+  Silo B — Identity attributes
+    cause_of_death, ethnicity, gender, nationality, religion
+
+  Silo C — Biographical attributes
+    institution, location, place_of_birth, place_of_death, profession
+
+
+================================================================
+HYPERPARAMETERS (identical to MetaQA for fair comparison)
+================================================================
+
+  KGE:
+    embed_dim   = 256    entity_dim = d = 256    joint_dim = 3d = 768
+    margin      = 1.0    lr         = 1e-3       epochs    = 100
+    batch_size  = 512    neg_samples= 10
+
+  QA:
+    lr          = 1e-4   epochs     = 30         batch_size = 64
+    margin      = 1.0    bert       = bert-base-uncased (frozen)
+    mlp_dims    = [768, 512, 768]
+
+  Candidate filtering:
+    hop1_cap    = 50     hop2_cap   = 20         max_neighbors = 100
+
+  topic_anchoring = True     seed = 42     device = cuda:1
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client3/Bert+TransE
+
+# Step 1 — Train TransE KGE on each silo
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+  Reads  : Dataset/PQ2H/data/Client3/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_transe.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+  Reads  : models/silo_{a,b,c}_transe.pt
+           Dataset/PQ2H/data/Client3/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs/run_<timestamp>/fedv_train_log.{txt,json}
+
+
+================================================================
+NOTE ON DATASET SIZE
+================================================================
+
+PQ2H is much smaller than MetaQA:
+  Train: ~1,524 | Dev: ~189 | Test: ~195 questions
+
+The QA training loop prints every 50 batches (vs 200 for MetaQA).
+Dev evaluation runs every 2 epochs as usual.
+Overfitting is possible — monitor dev Hits@1 carefully.
+
+
