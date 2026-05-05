@@ -1,0 +1,112 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment
+  DistMult + BERT | 3 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client3/Bert+DistMult
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client3/          ← shared, read-only
+│   ├── silos/
+│   │   ├── kb_silo_a.txt               ← Family    (children, parents, spouse)
+│   │   ├── kb_silo_b.txt               ← Identity  (gender, nationality, ...)
+│   │   └── kb_silo_c.txt               ← Biog.     (place_of_birth, institution, ...)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client3/Bert+DistMult/         ← this project
+    ├── HOW_TO_RUN_PQ2H_DISTMULT.txt
+    ├── config.py                        ← all paths + hyperparams
+    ├── dataset.py                       ← PQ2H-specific data loader (copy from Bert+TransE)
+    ├── distmult_model.py                ← DistMult KGE model
+    ├── server.py                        ← federated server (copy from Bert+TransE)
+    ├── evaluate.py                      ← evaluation (copy from Bert+TransE)
+    ├── train_kge.py                     ← run first
+    ├── train_fedv.py                    ← run second
+    ├── models/                          ← auto-created
+    │   ├── silo_a_distmult.pt
+    │   ├── silo_b_distmult.pt
+    │   ├── silo_c_distmult.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs/                            ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+WHAT IS DIFFERENT FROM Bert+TransE (PQ2H)
+================================================================
+
+  Component         Bert+TransE          Bert+DistMult
+  ──────────────────────────────────────────────────────
+  KGE model         TransE               DistMult
+  Scoring function  -||h + r - t||       <h, r, t>
+  Model file        transe_model.py      distmult_model.py
+  Checkpoints       silo_*_transe.pt     silo_*_distmult.pt
+  Checkpoint dir    Bert+TransE/models   Bert+DistMult/models
+  Log dir           Bert+TransE/logs     Bert+DistMult/logs
+  All hyperparams   —                    IDENTICAL (fair comparison)
+
+Files copied unchanged from Bert+TransE:
+  dataset.py, server.py, evaluate.py
+
+
+================================================================
+KEY DIFFERENCE: DistMult vs TransE
+================================================================
+
+DistMult uses bilinear diagonal scoring:
+  φ(h, r, t) = <h ⊙ r, t> = sum(h * r * t)
+
+Unlike TransE, DistMult is symmetric: φ(h, r, t) = φ(t, r, h).
+This limits expressiveness for anti-symmetric relations like
+parents/children (which are inverses of each other in Silo A).
+
+  Model     | Scoring          | Entity dim | Joint dim
+  ─────────────────────────────────────────────────────
+  TransE    | -||h+r-t||       | d = 256    | 3d = 768
+  DistMult  | <h, r, t>        | d = 256    | 3d = 768
+
+No weight_decay is used for DistMult (unlike ComplEx which uses 1e-6).
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client3/Bert+DistMult
+
+# Step 1 — Train DistMult KGE on each silo
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+  Reads  : Dataset/PQ2H/data/Client3/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_distmult.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+  Reads  : models/silo_{a,b,c}_distmult.pt
+           Dataset/PQ2H/data/Client3/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs/run_<timestamp>/fedv_train_log.{txt,json}
+
+
