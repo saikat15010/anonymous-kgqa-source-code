@@ -1,0 +1,149 @@
+================================================================
+  FedV-KGQA — DistMult + BERT Experiment
+  3 Silos | 2-hop | OWL2-Enriched KB
+================================================================
+
+Project folder : /home/islamm9/ISWC/Client3/Bert+DistMult/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (shared with Bert+TransE — no re-enrichment needed)
+
+Shortcut
+
+python train_kge_distmult.py
+python train_fedv_distmult.py
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/          ← shared, read-only for this experiment
+│   ├── kb.txt                     ← original MetaQA KB
+│   ├── kb_enriched_owl.txt        ← already created by Bert+TransE run
+│   ├── tbox.txt
+│   ├── entailment_report.txt
+│   ├── silos/
+│   │   ├── kb_silo_a.txt          ← already created by Bert+TransE run
+│   │   ├── kb_silo_b.txt
+│   │   └── kb_silo_c.txt
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── Client3/Bert+DistMult/         ← this project
+    ├── config_distmult.py
+    ├── distmult_model.py
+    ├── train_kge_distmult.py
+    ├── train_fedv_distmult.py
+    ├── dataset.py                 ← copy from Bert+TransE (unchanged)
+    ├── server.py                  ← copy from Bert+TransE (unchanged)
+    ├── evaluate.py                ← copy from Bert+TransE (unchanged)
+    ├── models/                    ← created automatically
+    │   ├── silo_a_distmult.pt
+    │   ├── silo_b_distmult.pt
+    │   ├── silo_c_distmult.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_distmult/             ← created automatically
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+BEFORE YOU START — config_distmult.py
+================================================================
+
+Open config_distmult.py and set these two lines:
+
+  DATA_DIR       = "/home/islamm9/ISWC/Dataset/Client3/data"
+  CHECKPOINT_DIR = "/home/islamm9/ISWC/Client3/Bert+DistMult/models"
+
+Everything else (all hyperparameters) is already identical to
+the Bert+TransE experiment for fair comparison.
+
+
+================================================================
+FILES TO COPY FROM Bert+TransE
+================================================================
+
+These 3 files are completely unchanged — just copy them:
+
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py  \
+     /home/islamm9/ISWC/Client3/Bert+DistMult/
+
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/server.py   \
+     /home/islamm9/ISWC/Client3/Bert+DistMult/
+
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/evaluate.py \
+     /home/islamm9/ISWC/Client3/Bert+DistMult/
+
+DO NOT copy: config.py, transe_model.py, train_kge.py, train_fedv.py
+  (those are TransE-specific)
+
+DO NOT re-run: ontology_enrich_kb.py or split_kb.py
+  (the enriched KB and silos already exist in the shared Dataset folder)
+
+
+================================================================
+WHAT IS DIFFERENT FROM Bert+TransE
+================================================================
+
+  Component         Bert+TransE        Bert+DistMult
+  ──────────────────────────────────────────────────
+  KGE model         TransE             DistMult
+  Scoring function  -||h + r - t||     <h, r, t>
+  Config file       config.py          config_distmult.py
+  KGE trainer       train_kge.py       train_kge_distmult.py
+  QA trainer        train_fedv.py      train_fedv_distmult.py
+  Model file        transe_model.py    distmult_model.py
+  Checkpoint dir    models/            models/  (in Bert+DistMult/)
+  Log dir           logs/              logs_distmult/
+  All hyperparams   —                  IDENTICAL (fair comparison)
+
+
+================================================================
+STEP 1 — INSTALL (if not already done)
+================================================================
+
+pip install torch transformers sentencepiece
+
+
+================================================================
+STEP 2 — TRAIN KGE (DistMult, 3 silos)
+================================================================
+
+cd /home/islamm9/ISWC/Client3/Bert+DistMult
+python train_kge_distmult.py
+
+  Reads  : /home/islamm9/ISWC/Dataset/Client3/data/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_distmult.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs_distmult/run_<timestamp>/kge_train_log.{txt,json}
+
+  Expected time: ~30-60 min on GPU (same as TransE)
+
+
+================================================================
+STEP 3 — FEDERATED QA TRAINING (DistMult + BERT)
+================================================================
+
+python train_fedv_distmult.py
+
+  Reads  : models/silo_{a,b,c}_distmult.pt
+           /home/islamm9/ISWC/Dataset/Client3/data/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs_distmult/run_<timestamp>/fedv_train_log.{txt,json}
+
+  Logs every epoch: train loss
+  Logs every 2 epochs: dev MRR + Hits@1/3/5/10 (overall + per answer-type)
+  Logs at end: final test results with best checkpoint epoch
+
+  Expected time: ~1-3 hours on GPU (same as TransE)
+
+
