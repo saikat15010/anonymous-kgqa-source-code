@@ -1,0 +1,91 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 3
+  RoBERTa + ComplEx | 3 Silos | 1-2 hop | Freebase | OWL-enriched KB
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client3/RoBERTa+ComplEx
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (3-silo aware)
+  complex_model.py   — ComplEx KGE model (2d complex, Hermitian dot product)
+  server.py          — 3-silo RoBERTa server (joint_dim = 3*2d = 1536)
+  evaluate.py        — evaluation (3-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train ComplEx on all 3 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+KEY DIMENSIONS
+================================================================
+
+  KGE_EMBED_DIM  = d   = 256   (complex dimension)
+  entity_dim     = 2d  = 512
+  relation_dim   = 2d  = 512   (complex — unlike RotatE's d phase angles)
+  joint_dim      = 3 × 2d = 1536
+
+  MLP: 768 → 512 → 1536
+
+
+================================================================
+COMPLEX vs ROTATE (both entity_dim=512, joint_dim=1536)
+================================================================
+
+  Property           RotatE               ComplEx
+  ─────────────────────────────────────────────────────────────
+  relation_dim       d=256 (phase angles)  2d=512 (complex)
+  Scoring            -||h∘e^ir - t||       Re(<h,r,conj(t)>)
+  L2 norm            YES                   YES  (same)
+  KGE weight decay   No                    1e-6 (KGE-phase only)
+  QA weight decay    No                    No   (same)
+  Checkpoint names   silo_*_rotate.pt      silo_*_complex.pt
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_complex.pt
+    silo_b_complex.pt
+    silo_c_complex.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client3/RoBERTa+ComplEx
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT3 EXPERIMENT MATRIX — ALL COMPLETE
+================================================================
+
+  Encoder    | TransE | DistMult | RotatE | ComplEx
+  ─────────────────────────────────────────────────
+  BERT       |  DONE  |  DONE    |  DONE  |  DONE
+  DistilBERT |  DONE  |  DONE    |  DONE  |  DONE
+  RoBERTa    |  DONE  |  DONE    |  DONE  |  THIS ✓
+
+  All 12 WebQSP Client3 experiments now complete!
+
+================================================================
