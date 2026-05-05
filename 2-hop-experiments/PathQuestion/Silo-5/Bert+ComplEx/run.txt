@@ -1,0 +1,98 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 5
+  ComplEx + BERT | 5 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client5/Bert+ComplEx
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (5-silo aware)
+  complex_model.py   — ComplEx KGE model (2d complex embeddings)
+  server.py          — 5-silo BERT server  (joint_dim = 10d = 2560)
+  evaluate.py        — evaluation  (5-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train ComplEx on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_complex.pt
+    silo_b_complex.pt
+    silo_c_complex.pt
+    silo_d_complex.pt
+    silo_e_complex.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt
+    kge_train_log.json
+    fedv_train_log.txt
+    fedv_train_log.json
+
+
+================================================================
+SILO RELATION SPLIT (Client5)
+================================================================
+
+  Silo A — Family       : parents, children, spouse
+  Silo B — Demographics : gender, nationality
+  Silo C — Identity     : ethnicity, religion, cause_of_death
+  Silo D — Occupation   : profession, institution
+  Silo E — Places       : place_of_birth, place_of_death, location
+
+
+================================================================
+DIMENSION SUMMARY FOR ALL CLIENT5 EXPERIMENTS
+================================================================
+
+  Model      | Entity dim | Joint dim  | MLP output | KGE optimizer
+  ──────────────────────────────────────────────────────────────────
+  TransE     |   d = 256  |  5d = 1280 |   1280     | Adam
+  DistMult   |   d = 256  |  5d = 1280 |   1280     | Adam
+  RotatE     |  2d = 512  | 10d = 2560 |   2560     | Adam
+  ComplEx    |  2d = 512  | 10d = 2560 |   2560     | Adam (wd=1e-6)
+
+ComplEx is the only model with weight_decay=1e-6 in the KGE
+optimizer. This applies to train_kge.py only — the QA-phase
+optimizers (train_fedv.py) use no weight decay.
+
+
+================================================================
+ComplEx vs RotatE (both joint_dim = 10d = 2560)
+================================================================
+
+  RotatE  : relations are d-dim phase angles (geometric rotation)
+  ComplEx : relations are 2d-dim complex vectors (unconstrained)
+            Handles symmetric, anti-symmetric, and inverse patterns
+            via Hermitian dot product phi(h,r,t) = Re(<h, r, conj(t)>)
+
+Silo A contains spouse (symmetric) and parents<->children
+(anti-symmetric). ComplEx handles both simultaneously.
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client5/Bert+ComplEx
+
+# Step 1: Train ComplEx on each of the 5 silos independently
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+# Step 2: Federated QA training
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
