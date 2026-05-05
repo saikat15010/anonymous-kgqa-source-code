@@ -1,0 +1,118 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 5
+  TransE + BERT | 5 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client5/Bert+TransE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client5/              ← shared, read-only
+│   ├── kb_enriched.txt                     ← same KB as Client3
+│   ├── silos/
+│   │   ├── kb_silo_a.txt  ← Family      (parents, children, spouse)
+│   │   ├── kb_silo_b.txt  ← Demographics(gender, nationality)
+│   │   ├── kb_silo_c.txt  ← Identity    (ethnicity, religion, cause_of_death)
+│   │   ├── kb_silo_d.txt  ← Occupation  (profession, institution)
+│   │   └── kb_silo_e.txt  ← Places      (place_of_birth, place_of_death, location)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client5/Bert+TransE/               ← this project
+    ├── HOW_TO_RUN_CLIENT5_BERT_TRANSE.txt
+    ├── config.py                            ← paths + hyperparams (5 silos)
+    ├── dataset.py                           ← PQ2H data loader
+    ├── transe_model.py                      ← TransE KGE model
+    ├── server.py                            ← 5-silo server (joint_dim = 5d = 1280)
+    ├── evaluate.py                          ← evaluation (5-silo fuse call)
+    ├── train_kge.py                         ← run first  (trains 5 silos)
+    ├── train_fedv.py                        ← run second (5 models + optimizers)
+    ├── models/                              ← auto-created
+    │   ├── silo_a_transe.pt
+    │   ├── silo_b_transe.pt
+    │   ├── silo_c_transe.pt
+    │   ├── silo_d_transe.pt
+    │   ├── silo_e_transe.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs/                                ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+KEY DIFFERENCE FROM CLIENT3 (3 silos → 5 silos)
+================================================================
+
+  Aspect             | Client3              | Client5
+  ─────────────────────────────────────────────────────────────
+  Number of silos    | 3                    | 5
+  Silo KBs           | silo_a, b, c         | silo_a, b, c, d, e
+  Joint embedding    | h_joint ∈ ℝ^(3d=768) | h_joint ∈ ℝ^(5d=1280)
+  MLP output dim     | 768                  | 1280
+  Server fuse args   | h_a, h_b, h_c        | h_a, h_b, h_c, h_d, h_e
+  KGE checkpoints    | 3 .pt files          | 5 .pt files
+  Saved fedv state   | 3 model keys         | 5 model keys (+ model_d, model_e)
+  QA train optimizers| 3                    | 5
+  All hyperparameters| —                    | IDENTICAL
+
+  Silo relation split (Client5):
+    Silo A  Family       : parents, children, spouse          (3 relations)
+    Silo B  Demographics : gender, nationality                (2 relations)
+    Silo C  Identity     : ethnicity, religion, cause_of_death(3 relations)
+    Silo D  Occupation   : profession, institution            (2 relations)
+    Silo E  Places       : place_of_birth, place_of_death,    (3 relations)
+                           location
+
+
+================================================================
+PREREQUISITE — GENERATE CLIENT5 SILO FILES
+================================================================
+
+If you haven't already run split_kb_silos.py for Client5:
+
+  cd /home/islamm9/ISWC/Dataset/PQ2H/data/Client5
+  python split_kb_silos.py
+
+This creates silos/kb_silo_{a,b,c,d,e}.txt from kb_enriched.txt.
+The QA files (qa_train/dev/test.txt) are the same as Client3 —
+copy or symlink them:
+
+  cp -r /home/islamm9/ISWC/Dataset/PQ2H/data/Client3/qa \
+        /home/islamm9/ISWC/Dataset/PQ2H/data/Client5/
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client5/Bert+TransE
+
+# Step 1 — Train TransE KGE on each of the 5 silos
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+  Writes : models/silo_{a,b,c,d,e}_transe.pt
+           models/shared_entity2id.json
+           logs/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training (5-silo fusion)
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+  Writes : models/fedv_best.pt
+           logs/run_<timestamp>/fedv_train_log.{txt,json}
+
+
