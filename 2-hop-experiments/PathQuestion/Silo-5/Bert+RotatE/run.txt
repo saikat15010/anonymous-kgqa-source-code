@@ -1,0 +1,84 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 5
+  RotatE + BERT | 5 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client5/Bert+RotatE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (5-silo aware)
+  rotate_model.py    — RotatE KGE model (2d complex embeddings)
+  server.py          — 5-silo BERT server  (joint_dim = 10d = 2560)
+  evaluate.py        — evaluation  (5-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train RotatE on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_rotate.pt
+    silo_b_rotate.pt
+    silo_c_rotate.pt
+    silo_d_rotate.pt
+    silo_e_rotate.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt
+    kge_train_log.json
+    fedv_train_log.txt
+    fedv_train_log.json
+
+
+================================================================
+SILO RELATION SPLIT (Client5)
+================================================================
+
+  Silo A — Family       : parents, children, spouse
+  Silo B — Demographics : gender, nationality
+  Silo C — Identity     : ethnicity, religion, cause_of_death
+  Silo D — Occupation   : profession, institution
+  Silo E — Places       : place_of_birth, place_of_death, location
+
+
+================================================================
+CRITICAL DIMENSION DIFFERENCE vs Client5/Bert+TransE
+================================================================
+
+RotatE uses 2d entity embeddings (complex), so with 5 silos:
+
+  Model      | Entity dim | Joint dim  | MLP output
+  ──────────────────────────────────────────────────
+  TransE     |   d = 256  |  5d = 1280 |   1280
+  DistMult   |   d = 256  |  5d = 1280 |   1280
+  RotatE     |  2d = 512  | 10d = 2560 |   2560  <- THIS
+  ComplEx    |  2d = 512  | 10d = 2560 |   2560
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client5/Bert+RotatE
+
+# Step 1: Train RotatE on each of the 5 silos independently
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+# Step 2: Federated QA training
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
