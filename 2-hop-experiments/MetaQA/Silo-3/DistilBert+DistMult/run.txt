@@ -1,0 +1,131 @@
+================================================================
+  FedV-KGQA — DistMult + DistilBERT Experiment
+  3 Silos | 2-hop | OWL2-Enriched KB
+================================================================
+shortcut
+
+cd /home/islamm9/ISWC/Client3/DistilBert+DistMult
+
+# Step 1 — Train DistMult KGE on each silo independently
+python train_kge_distilbert_distmult.py
+
+# Step 2 — Federated QA training with DistilBERT encoder
+# Expected: ~1-2 hours on GPU (faster than BERT experiments)
+python train_fedv_distilbert_distmult.py
+
+
+
+Project folder : /home/islamm9/ISWC/Client3/DistilBert+DistMult/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (unified shared dataset — no re-enrichment or re-splitting needed)
+
+
+================================================================
+KEY DIFFERENCE FROM OTHER EXPERIMENTS
+================================================================
+
+Two axes of variation — KGE model and QA encoder:
+
+  Experiment          | KGE model | QA encoder        | h_joint dim
+  ─────────────────────────────────────────────────────────────────
+  Bert+TransE         | TransE    | BERT-base (110M)  | 3d = 768
+  Bert+DistMult       | DistMult  | BERT-base (110M)  | 3d = 768
+  DistilBert+TransE   | TransE    | DistilBERT (66M)  | 3d = 768
+  DistilBert+DistMult | DistMult  | DistilBERT (66M)  | 3d = 768  ← THIS
+
+This experiment isolates the combined effect of using DistMult
+(bilinear scoring) and DistilBERT (lighter encoder).
+
+KGE scoring differences:
+  TransE   : φ(h,r,t) = −||h + r − t||₂   (translation-based)
+  DistMult : φ(h,r,t) = ⟨h, r, t⟩          (bilinear diagonal)
+
+DistilBERT vs BERT-base:
+  - 6 transformer layers vs 12
+  - 66M parameters vs 110M  (~40% smaller)
+  - Same 768-dim output     → MLP and h_joint dims unchanged
+  - ~60% faster inference   → QA training step is notably quicker
+
+All hyperparameters (KGE_EMBED_DIM=256, KGE_EPOCHS=100,
+QA_EPOCHS=30, QA_LR=1e-4, SEED=42, etc.) are identical
+across all experiments for fair comparison.
+
+
+================================================================
+PROJECT STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/               ← shared, read-only
+│   ├── kb_enriched_owl.txt
+│   ├── silos/kb_silo_{a,b,c}.txt
+│   └── qa/2-hop/qa_{train,dev,test}.txt
+│
+└── Client3/DistilBert+DistMult/
+    ├── HOW_TO_RUN_DISTILBERT_DISTMULT.txt
+    ├── config_distilbert_distmult.py    ← all paths + hyperparams
+    ├── server_distilbert_distmult.py    ← server with DistilBERT encoder
+    ├── evaluate_distilbert_distmult.py  ← evaluation
+    ├── distmult_model.py               ← copy from Bert+DistMult
+    ├── dataset.py                      ← copy from Bert+TransE
+    ├── train_kge_distilbert_distmult.py ← run first
+    ├── train_fedv_distilbert_distmult.py ← run second
+    ├── models/                         ← auto-created
+    │   ├── silo_a_distmult.pt
+    │   ├── silo_b_distmult.pt
+    │   ├── silo_c_distmult.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_distilbert_distmult/       ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+FILES TO COPY FROM EXISTING EXPERIMENTS
+================================================================
+
+  # DistMult model (from Bert+DistMult)
+  cp /home/islamm9/ISWC/Client3/Bert+DistMult/distmult_model.py \
+     /home/islamm9/ISWC/Client3/DistilBert+DistMult/
+
+  # Dataset utilities (from Bert+TransE — shared across all experiments)
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py \
+     /home/islamm9/ISWC/Client3/DistilBert+DistMult/
+
+Do NOT copy: server.py, evaluate.py, config.py, config_distmult.py
+  (all replaced by the distilbert_distmult variants in this folder)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/Client3/DistilBert+DistMult
+
+# Step 1 — Train DistMult KGE on each silo independently
+# (DistilBERT is NOT involved here — KGE is encoder-agnostic)
+# Expected: ~30-60 min on GPU
+CUDA_VISIBLE_DEVICES=1 python train_kge_distilbert_distmult.py
+
+# Step 2 — Federated QA training with DistilBERT encoder
+# Expected: ~1-2 hours on GPU (faster than BERT experiments)
+CUDA_VISIBLE_DEVICES=1 python train_fedv_distilbert_distmult.py
+
+
+================================================================
+WHAT IS AUTOMATICALLY CREATED
+================================================================
+
+  models/                                → created by train_kge step
+  models/silo_{a,b,c}_distmult.pt       → DistMult checkpoints per silo
+  models/shared_entity2id.json          → unified entity vocabulary
+  models/current_run_id.txt             → links KGE and FedV log dirs
+  models/fedv_best.pt                   → best QA checkpoint by Dev Hits@1
+  logs_distilbert_distmult/run_.../     → all training logs
+
+
