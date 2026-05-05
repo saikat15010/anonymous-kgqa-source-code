@@ -1,0 +1,109 @@
+================================================================
+  FedV-KGQA — ComplEx + BERT Experiment
+  3 Silos | 2-hop | Enriched KB
+================================================================
+Shortcut
+
+cd /home/islamm9/ISWC/Client3/Bert+ComplEx
+python train_kge_complex.py
+python train_fedv_complex.py
+
+
+
+
+Project folder : /home/islamm9/ISWC/Client3/Bert+ComplEx/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (shared — no re-enrichment needed)
+
+
+================================================================
+PROJECT STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/               ← shared, read-only
+│   ├── kb_enriched_owl.txt             ← already exists
+│   ├── silos/kb_silo_{a,b,c}.txt      ← already exists
+│   └── qa/2-hop/qa_{train,dev,test}.txt
+│
+└── Client3/Bert+ComplEx/
+    ├── HOW_TO_RUN_COMPLEX.txt
+    ├── config_complex.py               ← all paths + hyperparams
+    ├── complex_model.py                ← ComplEx KGE model
+    ├── server_complex.py               ← server with 6d joint dim
+    ├── evaluate_complex.py             ← evaluation
+    ├── dataset.py                      ← copy from Bert+TransE
+    ├── train_kge_complex.py            ← run first
+    ├── train_fedv_complex.py           ← run second
+    ├── models/                         ← auto-created
+    │   ├── silo_a_complex.pt
+    │   ├── silo_b_complex.pt
+    │   ├── silo_c_complex.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_complex/                   ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+KEY DIFFERENCE FROM TransE / DistMult / RotatE
+================================================================
+
+ComplEx uses Hermitian dot product scoring in complex space:
+  phi(h, r, t) = Re(<h, r, conj(t)>)
+
+Like RotatE, entity embeddings are 2d-dimensional (complex).
+Unlike RotatE, relation embeddings are also 2d (not just phases).
+This gives ComplEx more expressive power for anti-symmetric
+relations — critical for owl:inverseOf axioms in this pipeline.
+
+  Model       | Entity dim | Rel dim | Joint dim | Scoring
+  ─────────────────────────────────────────────────────────
+  TransE      |   d = 256  |    d    |  3d = 768 | -||h+r-t||
+  DistMult    |   d = 256  |    d    |  3d = 768 | <h,r,t>
+  RotatE      |  2d = 512  |    d    | 6d = 1536 | -||h∘r-t||
+  ComplEx     |  2d = 512  |   2d    | 6d = 1536 | Re(<h,r,conj(t)>)
+
+ComplEx also uses L2 weight decay (1e-6) in the KGE optimizer,
+which is standard practice for ComplEx training.
+
+
+================================================================
+FILE TO COPY FROM Bert+TransE
+================================================================
+
+Only dataset.py is needed:
+
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py \
+     /home/islamm9/ISWC/Client3/Bert+ComplEx/
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/Client3/Bert+ComplEx
+
+# Step 1 — Train ComplEx KGE on each silo (~30-60 min on GPU)
+CUDA_VISIBLE_DEVICES=1 python train_kge_complex.py
+
+# Step 2 — Federated QA training (~1-3 hours on GPU)
+CUDA_VISIBLE_DEVICES=1 python train_fedv_complex.py
+
+
+================================================================
+WHAT IS AUTOMATICALLY CREATED
+================================================================
+
+  models/                          created by train_kge_complex.py
+  models/silo_{a,b,c}_complex.pt   created by train_kge_complex.py
+  models/shared_entity2id.json     created by train_kge_complex.py
+  models/fedv_best.pt              created by train_fedv_complex.py
+  logs_complex/run_.../            created by train_kge_complex.py
+
+
