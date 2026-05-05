@@ -1,0 +1,5 @@
+cd /home/islamm9/ISWC/Client5/Bert+ComplEx
+
+CUDA_VISIBLE_DEVICES=0 python train_kge_complex.py
+
+CUDA_VISIBLE_DEVICES=0 python train_fedv_complex.py
