@@ -1,0 +1,112 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment
+  TransE + DistilBERT | 3 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client3/DistilBert+TransE
+python train_kge_distilbert_transe.py
+python train_fedv_distilbert_transe.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client3/              ← shared, read-only
+│   ├── silos/
+│   │   ├── kb_silo_a.txt                   ← Family    (children, parents, spouse)
+│   │   ├── kb_silo_b.txt                   ← Identity  (gender, nationality, ...)
+│   │   └── kb_silo_c.txt                   ← Biog.     (place_of_birth, ...)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client3/DistilBert+TransE/         ← this project
+    ├── HOW_TO_RUN_PQ2H_DISTILBERT_TRANSE.txt
+    ├── config_distilbert_transe.py          ← all paths + hyperparams
+    ├── dataset.py                           ← PQ2H data loader (copy from Bert+TransE)
+    ├── transe_model.py                      ← TransE KGE model (copy from Bert+TransE)
+    ├── server_distilbert.py                 ← server with DistilBERT encoder
+    ├── evaluate_distilbert.py               ← evaluation (PQ2H answer types)
+    ├── train_kge_distilbert_transe.py       ← run first
+    ├── train_fedv_distilbert_transe.py      ← run second
+    ├── models/                              ← auto-created
+    │   ├── silo_a_transe.pt
+    │   ├── silo_b_transe.pt
+    │   ├── silo_c_transe.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_distilbert_transe/              ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+KEY DIFFERENCE FROM Bert+TransE (PQ2H)
+================================================================
+
+Only the QA encoder changes. TransE KGE is identical.
+
+  Component      | Bert+TransE (PQ2H)   | DistilBert+TransE (PQ2H)
+  ─────────────────────────────────────────────────────────────────
+  KGE model      | TransE               | TransE  (same)
+  Encoder model  | bert-base-uncased    | distilbert-base-uncased
+  Encoder layers | 12                   | 6
+  Encoder params | ~110M                | ~66M
+  Encoder output | 768-dim              | 768-dim  (same)
+  h_joint dim    | 3d = 768             | 3d = 768  (same)
+  MLP dims       | [768, 512, 768]      | [768, 512, 768]  (same)
+  Log dir        | logs/                | logs_distilbert_transe/
+  All other HP   | identical            | identical
+
+DistilBERT is ~40% smaller and ~60% faster than BERT-base
+while retaining ~97% of BERT's NLP performance on most tasks.
+
+
+================================================================
+FILES COPIED UNCHANGED FROM Bert+TransE (PQ2H)
+================================================================
+
+  dataset.py      ← tab-separated KB + PQ2H QA parser (no changes needed)
+  transe_model.py ← TransE KGE (no changes needed)
+
+Do NOT copy: server.py, evaluate.py, config.py
+  (replaced by server_distilbert.py, evaluate_distilbert.py,
+   config_distilbert_transe.py)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client3/DistilBert+TransE
+
+# Step 1 — Train TransE KGE on each silo
+CUDA_VISIBLE_DEVICES=1 python train_kge_distilbert_transe.py
+
+  Reads  : Dataset/PQ2H/data/Client3/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_transe.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs_distilbert_transe/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training with DistilBERT
+CUDA_VISIBLE_DEVICES=1 python train_fedv_distilbert_transe.py
+
+  Reads  : models/silo_{a,b,c}_transe.pt
+           Dataset/PQ2H/data/Client3/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs_distilbert_transe/run_<timestamp>/fedv_train_log.{txt,json}
+
+Note: DistilBERT is ~60% faster than BERT, so Step 2 runs
+      notably quicker than the Bert+TransE experiment.
+
+
