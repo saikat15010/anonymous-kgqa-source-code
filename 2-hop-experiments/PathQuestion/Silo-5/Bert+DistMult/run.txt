@@ -1,0 +1,86 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 5
+  DistMult + BERT | 5 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client5/Bert+DistMult
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (5-silo aware)
+  distmult_model.py  — DistMult KGE model (d-dimensional real embeddings)
+  server.py          — 5-silo BERT server  (joint_dim = 5d = 1280)
+  evaluate.py        — evaluation  (5-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train DistMult on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_distmult.pt
+    silo_b_distmult.pt
+    silo_c_distmult.pt
+    silo_d_distmult.pt
+    silo_e_distmult.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt
+    kge_train_log.json
+    fedv_train_log.txt
+    fedv_train_log.json
+
+
+================================================================
+SILO RELATION SPLIT (Client5)
+================================================================
+
+  Silo A — Family       : parents, children, spouse
+  Silo B — Demographics : gender, nationality
+  Silo C — Identity     : ethnicity, religion, cause_of_death
+  Silo D — Occupation   : profession, institution
+  Silo E — Places       : place_of_birth, place_of_death, location
+
+
+================================================================
+DIMENSION SUMMARY FOR ALL CLIENT5 EXPERIMENTS
+================================================================
+
+  Model      | Entity dim | Joint dim  | MLP output | KGE optimizer
+  ──────────────────────────────────────────────────────────────────
+  TransE     |   d = 256  |  5d = 1280 |   1280     | Adam
+  DistMult   |   d = 256  |  5d = 1280 |   1280     | Adam  <- THIS
+  RotatE     |  2d = 512  | 10d = 2560 |   2560     | Adam
+  ComplEx    |  2d = 512  | 10d = 2560 |   2560     | Adam (wd=1e-6)
+
+DistMult uses d-dim real entity embeddings (same as TransE).
+joint_dim = 5d = 1280  (same as Bert+TransE for Client5).
+server.py and evaluate.py are dimension-compatible with TransE.
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client5/Bert+DistMult
+
+# Step 1: Train DistMult on each of the 5 silos independently
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+# Step 2: Federated QA training
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
