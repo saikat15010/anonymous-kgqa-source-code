@@ -1,0 +1,443 @@
+# src/train_fedv_distilbert_rotate.py — Federated QA training: RotatE + DistilBERT
+#
+# Compared to train_fedv_rotate.py (Bert+RotatE):
+#   - Imports FedVServer from server_distilbert_rotate  (DistilBERT encoder)
+#   - Imports evaluate/print_results from evaluate_distilbert_rotate
+#   - Imports config from config_distilbert_rotate
+#   - Log directory is logs_distilbert_rotate/ (not logs_rotate/)
+#   - All hyperparameters, training logic, and gradient handling are identical
+#
+# Compared to train_fedv_distilbert_distmult.py (DistilBert+DistMult):
+#   - Loads RotatE checkpoints (not DistMult)
+#   - Entity embeddings are (N, 2d) = (N, 512), not (N, d) = (N, 256)
+#   - h_joint ∈ ℝ^(6d) = ℝ^1536, q_embed ∈ ℝ^1536 (not 768)
+#   - No post-step L2 normalisation of entity embeddings (RotatE doesn't need it)
+#
+# Results saved to:
+#   logs_distilbert_rotate/run_<id>/fedv_train_log.txt
+#   logs_distilbert_rotate/run_<id>/fedv_train_log.json
+
+import os, json, random, time
+from datetime import datetime
+import torch
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import DataLoader
+
+from config_distilbert_rotate import (
+    SILO_A_KB, SILO_B_KB, SILO_C_KB,
+    CHECKPOINT_DIR, QA_TRAIN, QA_DEV, QA_TEST,
+    KGE_EMBED_DIM, KGE_NORM, QA_LR, QA_EPOCHS,
+    QA_BATCH_SIZE, QA_MARGIN, SEED, DEVICE,
+    MAX_NEIGHBORS, CANDIDATE_HOP1_CAP, CANDIDATE_HOP2_CAP,
+    ENTITY_DIM, JOINT_DIM
+)
+from dataset import QADataset, build_neighbor_index, precompute_candidates
+from rotate_model import RotatE
+from server_distilbert_rotate import FedVServer
+from evaluate_distilbert_rotate import evaluate, print_results
+
+
+# ── Seed ──────────────────────────────────────────────────────────────────────
+
+def set_seed(seed):
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+# ── Logger ────────────────────────────────────────────────────────────────────
+
+class FedVLogger:
+    """
+    Writes federated QA training results to:
+      logs_distilbert_rotate/run_<id>/fedv_train_log.txt
+      logs_distilbert_rotate/run_<id>/fedv_train_log.json
+
+    JSON structure:
+    {
+      "run_id"      : "run_YYYYMMDD_HHMMSS",
+      "kge_model"   : "RotatE",
+      "qa_encoder"  : "DistilBERT",
+      "config"      : { ... },
+      "train_loss"  : [ {"epoch":e, "avg_loss":l, "elapsed_sec":s}, ... ],
+      "dev_metrics" : [ {"epoch":e, "train_avg_loss":l,
+                         "overall":{...}, "per_type":{...}}, ... ],
+      "test_metrics": {"best_epoch":e, "overall":{...}, "per_type":{...}}
+    }
+    """
+
+    def __init__(self, log_dir, config_dict):
+        os.makedirs(log_dir, exist_ok=True)
+        self.txt_path  = os.path.join(log_dir, "fedv_train_log.txt")
+        self.json_path = os.path.join(log_dir, "fedv_train_log.json")
+        self.run_start = time.time()
+
+        self.data = {
+            "run_id"      : os.path.basename(log_dir),
+            "kge_model"   : "RotatE",
+            "qa_encoder"  : "DistilBERT",
+            "config"      : config_dict,
+            "train_loss"  : [],
+            "dev_metrics" : [],
+            "test_metrics": None,
+        }
+
+        with open(self.txt_path, "w") as f:
+            f.write("=" * 70 + "\n")
+            f.write("  FedV-KGQA  —  Federated QA Training Log"
+                    "  [RotatE + DistilBERT]\n")
+            f.write(f"  Run ID : {self.data['run_id']}\n")
+            f.write(f"  Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("=" * 70 + "\n\n")
+            f.write("Config:\n")
+            for k, v in config_dict.items():
+                f.write(f"  {k:<28} = {v}\n")
+            f.write("\n")
+            f.write("-" * 70 + "\n")
+            f.write("  TRAINING LOSS  (every epoch)\n")
+            f.write("-" * 70 + "\n")
+            f.write(f"  {'Epoch':<8} {'Avg Loss':<16} {'Elapsed':>10}\n")
+            f.write("-" * 70 + "\n")
+
+        self._flush()
+        print(f"FedV logs → {log_dir}")
+
+    def log_train_epoch(self, epoch, avg_loss):
+        elapsed = time.time() - self.run_start
+        self.data["train_loss"].append({
+            "epoch": epoch, "avg_loss": round(avg_loss, 6),
+            "elapsed_sec": round(elapsed, 1)
+        })
+        with open(self.txt_path, "a") as f:
+            f.write(f"  {epoch:<8} {avg_loss:<16.6f} {elapsed:>9.1f}s\n")
+        self._flush()
+
+    def log_dev(self, epoch, train_avg_loss, overall, per_type):
+        entry = {
+            "epoch"         : epoch,
+            "train_avg_loss": round(train_avg_loss, 6),
+            "overall"       : {k: round(v, 6) for k, v in overall.items()},
+            "per_type"      : {t: {k: round(v, 6) for k, v in m.items()}
+                               for t, m in per_type.items()},
+        }
+        self.data["dev_metrics"].append(entry)
+        with open(self.txt_path, "a") as f:
+            f.write("\n" + "-" * 70 + "\n")
+            f.write(f"  DEV EVALUATION  —  Epoch {epoch}"
+                    f"  |  Train Loss: {train_avg_loss:.6f}\n")
+            f.write("-" * 70 + "\n")
+            f.write(_fmt_overall(overall))
+            f.write(_fmt_per_type(per_type))
+            f.write("-" * 70 + "\n\n")
+        self._flush()
+
+    def log_test(self, best_epoch, overall, per_type):
+        self.data["test_metrics"] = {
+            "best_epoch": best_epoch,
+            "overall"   : {k: round(v, 6) for k, v in overall.items()},
+            "per_type"  : {t: {k: round(v, 6) for k, v in m.items()}
+                           for t, m in per_type.items()},
+        }
+        total = time.time() - self.run_start
+        with open(self.txt_path, "a") as f:
+            f.write("=" * 70 + "\n")
+            f.write(f"  FINAL TEST RESULTS"
+                    f"  (best checkpoint: epoch {best_epoch})\n")
+            f.write("=" * 70 + "\n")
+            f.write(_fmt_overall(overall))
+            f.write(_fmt_per_type(per_type))
+            f.write("=" * 70 + "\n")
+            f.write(f"\n  Total training time : {total/3600:.2f} hours\n")
+            f.write(f"  Finished            : "
+                    f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        self._flush()
+        print(f"\n  FedV logs saved:\n    {self.txt_path}\n    {self.json_path}")
+
+    def _flush(self):
+        with open(self.json_path, "w") as f:
+            json.dump(self.data, f, indent=2)
+
+
+# ── Formatting helpers ────────────────────────────────────────────────────────
+
+def _fmt_overall(r):
+    return (f"  Overall"
+            f"  |  MRR: {r['mrr']:.4f}"
+            f"  Hits@1: {r['hits@1']:.4f}"
+            f"  Hits@3: {r['hits@3']:.4f}"
+            f"  Hits@5: {r['hits@5']:.4f}"
+            f"  Hits@10: {r['hits@10']:.4f}"
+            f"  N: {r['total']}\n")
+
+
+def _fmt_per_type(per_type):
+    lines = "  Per Answer-Type:\n"
+    for atype in ["person", "movie", "year", "genre", "language", "unknown"]:
+        if atype not in per_type:
+            continue
+        r = per_type[atype]
+        lines += (f"    {atype:<10}"
+                  f"  MRR: {r['mrr']:.4f}"
+                  f"  Hits@1: {r['hits@1']:.4f}"
+                  f"  Hits@3: {r['hits@3']:.4f}"
+                  f"  Hits@5: {r['hits@5']:.4f}"
+                  f"  Hits@10: {r['hits@10']:.4f}"
+                  f"  N: {r['total']}\n")
+    return lines
+
+
+# ── Collate function ──────────────────────────────────────────────────────────
+
+def make_collate_fn(candidate_map):
+    """Collate QA samples into padded batches (-1 = padding for candidate_ids)."""
+    def collate_fn(batch):
+        questions    = [item[0] for item in batch]
+        topic_ids    = torch.tensor([item[1] for item in batch], dtype=torch.long)
+        answer_ids   = [item[2] for item in batch]
+        cand_tensors = [candidate_map[item[1]] for item in batch]
+        max_k        = max(t.shape[0] for t in cand_tensors)
+        padded       = torch.full((len(batch), max_k), -1, dtype=torch.long)
+        for i, t in enumerate(cand_tensors):
+            padded[i, :t.shape[0]] = t
+        return questions, topic_ids, answer_ids, padded
+    return collate_fn
+
+
+# ── Model loading ─────────────────────────────────────────────────────────────
+
+def load_rotate(silo_name, device):
+    """Load a pretrained RotatE checkpoint from Phase 1 (KGE training)."""
+    ckpt = torch.load(
+        os.path.join(CHECKPOINT_DIR, f"{silo_name}_rotate.pt"),
+        map_location=device
+    )
+    model = RotatE(
+        num_entities  = ckpt["num_entities"],
+        num_relations = ckpt["num_relations"],
+        embed_dim     = ckpt["embed_dim"],    # complex dim d = 256
+        norm          = KGE_NORM
+    ).to(device)
+    model.load_state_dict(ckpt["model_state_dict"])
+    print(f"  Loaded {silo_name}  |  "
+          f"entities: {ckpt['num_entities']:,}  "
+          f"entity_dim: {ckpt.get('entity_dim', ENTITY_DIM)}  "
+          f"relations: {ckpt['num_relations']}")
+    return model
+
+
+# ── Checkpoint helpers ────────────────────────────────────────────────────────
+
+def _save(server, ma, mb, mc, tag):
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+    torch.save({
+        "server" : server.state_dict(),
+        "model_a": ma.state_dict(),
+        "model_b": mb.state_dict(),
+        "model_c": mc.state_dict(),
+    }, os.path.join(CHECKPOINT_DIR, f"fedv_{tag}.pt"))
+
+
+def _load(server, ma, mb, mc, tag, device):
+    ckpt = torch.load(
+        os.path.join(CHECKPOINT_DIR, f"fedv_{tag}.pt"),
+        map_location=device)
+    server.load_state_dict(ckpt["server"])
+    ma.load_state_dict(ckpt["model_a"])
+    mb.load_state_dict(ckpt["model_b"])
+    mc.load_state_dict(ckpt["model_c"])
+
+
+# ── Main training loop ────────────────────────────────────────────────────────
+
+def train():
+    set_seed(SEED)
+    device = torch.device(DEVICE if torch.cuda.is_available() else "cpu")
+    print(f"Device: {device}")
+    print(f"RotatE entity dim per silo : {ENTITY_DIM}  (= 2 × {KGE_EMBED_DIM})")
+    print(f"Joint embedding dim (6d)   : {JOINT_DIM}")
+    print(f"DistilBERT → MLP output    : {JOINT_DIM}  (matches joint dim)")
+
+    # Reuse run_id created by train_kge_distilbert_rotate.py
+    run_id_path = os.path.join(CHECKPOINT_DIR, "current_run_id.txt")
+    if os.path.exists(run_id_path):
+        with open(run_id_path) as f:
+            run_id = f.read().strip()
+        print(f"\nContinuing run: {run_id}")
+    else:
+        run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+        print(f"\nNew run: {run_id}")
+
+    log_dir = os.path.join(os.path.dirname(CHECKPOINT_DIR),
+                           "logs_distilbert_rotate", run_id)
+
+    config_dict = {
+        "kge_model"          : "RotatE",
+        "qa_encoder"         : "DistilBERT (distilbert-base-uncased)",
+        "kge_embed_dim"      : KGE_EMBED_DIM,
+        "entity_dim_per_silo": ENTITY_DIM,
+        "joint_dim"          : JOINT_DIM,
+        "distilbert_dim"     : 768,
+        "mlp_output_dim"     : JOINT_DIM,
+        "qa_lr"              : QA_LR,
+        "qa_epochs"          : QA_EPOCHS,
+        "qa_batch_size"      : QA_BATCH_SIZE,
+        "qa_margin"          : QA_MARGIN,
+        "candidate_hop1_cap" : CANDIDATE_HOP1_CAP,
+        "candidate_hop2_cap" : CANDIDATE_HOP2_CAP,
+        "max_neighbors"      : MAX_NEIGHBORS,
+        "seed"               : SEED,
+        "device"             : str(device),
+    }
+    logger = FedVLogger(log_dir, config_dict)
+
+    # ── Load shared entity index ───────────────────────────────────────────────
+    with open(os.path.join(CHECKPOINT_DIR, "shared_entity2id.json")) as f:
+        shared_entity2id = json.load(f)
+    print(f"Shared entities: {len(shared_entity2id):,}")
+
+    # ── Build 2-hop candidate map ──────────────────────────────────────────────
+    print("\nBuilding neighbor index (all 3 silo KBs)...")
+    neighbor_index = build_neighbor_index(
+        [SILO_A_KB, SILO_B_KB, SILO_C_KB],
+        shared_entity2id, max_neighbors=MAX_NEIGHBORS
+    )
+    print("Precomputing 2-hop candidate sets...")
+    candidate_map = precompute_candidates(
+        list(shared_entity2id.values()), neighbor_index,
+        hop1_cap=CANDIDATE_HOP1_CAP, hop2_cap=CANDIDATE_HOP2_CAP
+    )
+
+    # ── Load Phase 1 RotatE checkpoints ───────────────────────────────────────
+    print("\nLoading pretrained RotatE models (Phase 1)...")
+    model_a = load_rotate("silo_a", device)
+    model_b = load_rotate("silo_b", device)
+    model_c = load_rotate("silo_c", device)
+
+    # ── QA datasets ───────────────────────────────────────────────────────────
+    print("\nBuilding QA datasets...")
+    train_ds = QADataset(QA_TRAIN, shared_entity2id)
+    dev_ds   = QADataset(QA_DEV,   shared_entity2id)
+    test_ds  = QADataset(QA_TEST,  shared_entity2id)
+    print(f"  Train: {len(train_ds):,} | Dev: {len(dev_ds):,} | "
+          f"Test: {len(test_ds):,}")
+
+    collate      = make_collate_fn(candidate_map)
+    train_loader = DataLoader(train_ds, batch_size=QA_BATCH_SIZE,
+                              shuffle=True,  collate_fn=collate, num_workers=0)
+    dev_loader   = DataLoader(dev_ds,   batch_size=QA_BATCH_SIZE,
+                              shuffle=False, collate_fn=collate, num_workers=0)
+    test_loader  = DataLoader(test_ds,  batch_size=QA_BATCH_SIZE,
+                              shuffle=False, collate_fn=collate, num_workers=0)
+
+    # ── Server + optimizers ───────────────────────────────────────────────────
+    # server.question_encoder.mlp: trained on server (maps 768 → 1536)
+    # model_{a,b,c}.ent_embed    : (N, 512) — receive gradient slices of h_joint
+    server           = FedVServer(embed_dim=KGE_EMBED_DIM).to(device)
+    server_optimizer = optim.Adam(
+        server.question_encoder.mlp.parameters(), lr=QA_LR)
+    optim_a = optim.Adam(model_a.ent_embed.parameters(), lr=QA_LR)
+    optim_b = optim.Adam(model_b.ent_embed.parameters(), lr=QA_LR)
+    optim_c = optim.Adam(model_c.ent_embed.parameters(), lr=QA_LR)
+
+    best_hits1 = 0.0
+    best_epoch = 0
+    n_batches  = len(train_loader)
+
+    print(f"\nFederated QA training (RotatE + DistilBERT)"
+          f" — {QA_EPOCHS} epochs | {n_batches} batches/epoch\n")
+
+    # ── Training loop ─────────────────────────────────────────────────────────
+    for epoch in range(1, QA_EPOCHS + 1):
+        server.train()
+        model_a.train(); model_b.train(); model_c.train()
+        total_loss = 0.0
+
+        for batch_idx, (questions, topic_ids,
+                        answer_ids_batch, candidate_ids) in \
+                enumerate(train_loader, 1):
+
+            topic_ids     = topic_ids.to(device)
+            candidate_ids = candidate_ids.to(device)
+
+            server_optimizer.zero_grad()
+            optim_a.zero_grad(); optim_b.zero_grad(); optim_c.zero_grad()
+
+            # Forward — RotatE: ent_embed.weight ∈ (N, 2d) = (N, 512)
+            loss, _ = server(
+                questions, topic_ids,
+                model_a.ent_embed.weight,    # h_A: (N, 512)
+                model_b.ent_embed.weight,    # h_B: (N, 512)
+                model_c.ent_embed.weight,    # h_C: (N, 512)
+                answer_ids_batch, candidate_ids,
+                device, margin=QA_MARGIN
+            )
+
+            # Backward — ∂L/∂h_joint splits into three (N,512) slices
+            loss.backward()
+
+            # Gradient clipping (all components, norm=1.0)
+            torch.nn.utils.clip_grad_norm_(
+                server.question_encoder.mlp.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(model_a.ent_embed.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(model_b.ent_embed.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(model_c.ent_embed.parameters(), 1.0)
+
+            server_optimizer.step()
+            optim_a.step(); optim_b.step(); optim_c.step()
+
+            # RotatE: NO post-step normalisation on entity embeddings
+            # (unit modulus is maintained only on relation phase angles,
+            #  which are fixed after KGE training and live in the silos)
+
+            total_loss += loss.item()
+
+            if batch_idx % 200 == 0 or batch_idx == n_batches:
+                print(f"  Epoch {epoch}/{QA_EPOCHS} | "
+                      f"Batch {batch_idx}/{n_batches} | "
+                      f"Loss: {total_loss/batch_idx:.4f}", flush=True)
+
+        avg_loss = total_loss / n_batches
+        logger.log_train_epoch(epoch, avg_loss)
+
+        # Dev evaluation every 2 epochs (and final epoch)
+        if epoch % 2 == 0 or epoch == QA_EPOCHS:
+            print(f"\nEvaluating epoch {epoch}...", flush=True)
+            dev_results, dev_type_results = evaluate(
+                server, model_a, model_b, model_c,
+                dev_loader, device, per_type=True
+            )
+            print_results("Dev", dev_results, dev_type_results)
+            logger.log_dev(epoch, avg_loss, dev_results, dev_type_results)
+
+            if dev_results["hits@1"] > best_hits1:
+                best_hits1 = dev_results["hits@1"]
+                best_epoch = epoch
+                _save(server, model_a, model_b, model_c, "best")
+                print(f"  ★ New best  Hits@1: {best_hits1:.4f}  "
+                      f"(epoch {best_epoch})")
+        else:
+            print(f"Epoch {epoch:>3}/{QA_EPOCHS}  |  "
+                  f"Train Loss: {avg_loss:.4f}")
+
+    # ── Final test evaluation on best checkpoint ───────────────────────────────
+    print(f"\nLoading best checkpoint (epoch {best_epoch})...")
+    _load(server, model_a, model_b, model_c, "best", device)
+
+    test_results, test_type_results = evaluate(
+        server, model_a, model_b, model_c,
+        test_loader, device, per_type=True
+    )
+
+    print("\n" + "=" * 65)
+    print("  FINAL TEST RESULTS (RotatE + DistilBERT | 2-hop | 3 silos)")
+    print("=" * 65)
+    print_results("Test", test_results, test_type_results)
+    print("=" * 65)
+
+    logger.log_test(best_epoch, test_results, test_type_results)
+
+
+if __name__ == "__main__":
+    train()

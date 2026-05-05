@@ -1,0 +1,153 @@
+================================================================
+  FedV-KGQA — RotatE + DistilBERT Experiment
+  3 Silos | 2-hop | OWL2-Enriched KB
+================================================================
+shortcut
+
+cd /home/islamm9/ISWC/Client3/DistilBert+RotatE
+
+# Step 1 — Train RotatE KGE on each silo independently
+# DistilBERT is NOT involved here — KGE training is encoder-agnostic.
+python train_kge_distilbert_rotate.py
+
+# Step 2 — Federated QA training with DistilBERT encoder
+python train_fedv_distilbert_rotate.py
+
+
+
+
+Project folder : /home/islamm9/ISWC/Client3/DistilBert+RotatE/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (unified shared dataset — no re-enrichment or re-splitting needed)
+
+
+================================================================
+KEY DIFFERENCES FROM OTHER EXPERIMENTS
+================================================================
+
+This experiment combines two design choices:
+  - RotatE KGE: complex rotation scoring in ℂᵈ
+  - DistilBERT:  lighter, faster QA encoder
+
+                  | KGE model | Encoder          | Entity dim | Joint dim
+  ──────────────────────────────────────────────────────────────────────
+  Bert+TransE     | TransE    | BERT-base (110M) |  d = 256   | 3d = 768
+  Bert+DistMult   | DistMult  | BERT-base (110M) |  d = 256   | 3d = 768
+  Bert+RotatE     | RotatE    | BERT-base (110M) | 2d = 512   | 6d = 1536
+  DistilBert+TransE  | TransE | DistilBERT (66M) |  d = 256   | 3d = 768
+  DistilBert+DistMult| DistMult| DistilBERT (66M)|  d = 256   | 3d = 768
+  DistilBert+RotatE  | RotatE | DistilBERT (66M) | 2d = 512   | 6d = 1536 ← THIS
+
+RotatE specifics:
+  - Entities h, t ∈ ℂᵈ  stored as 2d real floats [re | im]
+  - Relations r ∈ ℂᵈ    with |r_i| = 1 → r_i = e^(iθ_i)
+  - Scoring:  φ(h,r,t) = −||h ∘ r − t||  (complex rotation distance)
+  - Superior for anti-symmetric, inverse, and compositional relations
+    (directly models OWL2 inverseOf and propertyChainAxiom patterns)
+  - NO post-step L2 normalisation of entity embeddings (unlike TransE/DistMult)
+  - Relation phase angles θ stay in silos — never sent to server
+
+DistilBERT specifics:
+  - 6 transformer layers  (BERT-base: 12)
+  - ~66M parameters       (BERT-base: ~110M)
+  - 768-dim [CLS] output  (same as BERT-base)
+  - MLP maps: 768 → 512 → 1536  (output = JOINT_DIM = 6d)
+  - ~60% faster inference — QA training step notably quicker than BERT
+
+All hyperparameters identical across experiments (SEED=42, KGE_LR=1e-3,
+QA_LR=1e-4, KGE_EPOCHS=100, QA_EPOCHS=30, KGE_BATCH_SIZE=512, etc.)
+
+
+================================================================
+PROJECT STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/                  ← shared, read-only
+│   ├── kb_enriched_owl.txt
+│   ├── silos/kb_silo_{a,b,c}.txt
+│   └── qa/2-hop/qa_{train,dev,test}.txt
+│
+└── Client3/DistilBert+RotatE/
+    ├── HOW_TO_RUN_DISTILBERT_ROTATE.txt
+    ├── config_distilbert_rotate.py         ← all paths + hyperparams
+    ├── server_distilbert_rotate.py         ← server with DistilBERT encoder
+    ├── evaluate_distilbert_rotate.py       ← evaluation (MRR, Hits@k)
+    ├── rotate_model.py                     ← copy from Bert+RotatE
+    ├── dataset.py                          ← copy from Bert+TransE
+    ├── train_kge_distilbert_rotate.py      ← run first  (Phase 1)
+    ├── train_fedv_distilbert_rotate.py     ← run second (Phase 2)
+    ├── models/                             ← auto-created
+    │   ├── silo_a_rotate.pt                  (N, 512) entity embeddings
+    │   ├── silo_b_rotate.pt
+    │   ├── silo_c_rotate.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_distilbert_rotate/             ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+FILES TO COPY FROM EXISTING EXPERIMENTS
+================================================================
+
+  # RotatE model (from Bert+RotatE)
+  cp /home/islamm9/ISWC/Client3/Bert+RotatE/rotate_model.py \
+     /home/islamm9/ISWC/Client3/DistilBert+RotatE/
+
+  # Dataset utilities (from Bert+TransE — shared across all experiments)
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py \
+     /home/islamm9/ISWC/Client3/DistilBert+RotatE/
+
+Do NOT copy: server_rotate.py, evaluate_rotate.py, config_rotate.py
+  (all replaced by the distilbert_rotate variants in this folder)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/Client3/DistilBert+RotatE
+
+# Step 1 — Train RotatE KGE on each silo independently
+# DistilBERT is NOT involved here — KGE training is encoder-agnostic.
+# Note: RotatE stores (N, 512) entity tensors vs (N, 256) for TransE/DistMult.
+# Expected: ~45-75 min on GPU
+CUDA_VISIBLE_DEVICES=1 python train_kge_distilbert_rotate.py
+
+# Step 2 — Federated QA training with DistilBERT encoder
+# MLP maps 768 → 512 → 1536 (vs 768 → 512 → 768 for TransE/DistMult exps)
+# Expected: ~1.5-2.5 hours on GPU (RotatE's larger joint dim increases cost)
+CUDA_VISIBLE_DEVICES=1 python train_fedv_distilbert_rotate.py
+
+
+================================================================
+EMBEDDING DIMENSIONS AT A GLANCE
+================================================================
+
+  Component          | TransE/DistMult | RotatE
+  ─────────────────────────────────────────────
+  KGE_EMBED_DIM      |    256          |   256   (complex dim)
+  Entity storage     |    256          |   512   (= 2 × 256, [re|im])
+  h_A, h_B, h_C      |   (N,256)       | (N,512)
+  h_joint            |   (N,768)       | (N,1536)
+  DistilBERT [CLS]   |   (B,768)       | (B,768) (same)
+  MLP output q_embed |   (B,768)       | (B,1536)
+  Gradient slice/silo|   (N,256)       | (N,512)
+
+
+================================================================
+WHAT IS AUTOMATICALLY CREATED
+================================================================
+
+  models/                            → created by train_kge step
+  models/silo_{a,b,c}_rotate.pt      → RotatE checkpoints (N, 512 entity dim)
+  models/shared_entity2id.json       → unified entity vocabulary
+  models/current_run_id.txt          → links KGE and FedV log directories
+  models/fedv_best.pt                → best QA checkpoint by Dev Hits@1
+  logs_distilbert_rotate/run_.../    → all training and eval logs
