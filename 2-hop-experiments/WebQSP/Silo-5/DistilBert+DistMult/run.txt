@@ -1,0 +1,87 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 5
+  DistilBERT + DistMult | 5 Silos | 1-2 hop | Freebase | OWL-enriched KB
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client5/DistilBert+DistMult
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (5-silo aware)
+  distmult_model.py  — DistMult KGE model (d-dim real, bilinear scoring)
+  server.py          — 5-silo DistilBERT server (joint_dim = 5d = 1280)
+  evaluate.py        — evaluation (5-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train DistMult on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+DISTMULT vs TRANSE (same encoder, same dimensions)
+================================================================
+
+  Property             TransE               DistMult
+  ─────────────────────────────────────────────────────────────
+  Scoring              -||h + r - t||_2     sum(h * r * t)
+  L2 normalisation     YES (every step)     NO
+  Weight decay         No                   No
+  Checkpoint names     silo_*_transe.pt     silo_*_distmult.pt
+  entity_dim           256                  256  (same)
+  joint_dim (Client5)  1280                 1280  (same)
+
+
+================================================================
+KEY DIMENSIONS
+================================================================
+
+  entity_dim  = d   = 256
+  joint_dim   = 5d  = 1280      ← 5 silos × 256
+  MLP         : 768 → 512 → 1280
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_distmult.pt
+    silo_b_distmult.pt
+    silo_c_distmult.pt
+    silo_d_distmult.pt
+    silo_e_distmult.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client5/DistilBert+DistMult
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT5 DISTILBERT EXPERIMENT MATRIX
+================================================================
+
+  Encoder    | TransE | DistMult | RotatE | ComplEx
+  ─────────────────────────────────────────────────
+  BERT       |  DONE  |  DONE    |  DONE  |  DONE
+  DistilBERT |  DONE  |  THIS ✓  |        |
+
+================================================================
