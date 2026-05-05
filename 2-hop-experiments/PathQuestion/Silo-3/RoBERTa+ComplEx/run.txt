@@ -1,0 +1,114 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment
+  ComplEx + RoBERTa | 3 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client3/RoBERTa+ComplEx
+python train_kge_roberta_complex.py
+python train_fedv_roberta_complex.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client3/              ← shared, read-only
+│   ├── silos/
+│   │   ├── kb_silo_a.txt                   ← Family    (children, parents, spouse)
+│   │   ├── kb_silo_b.txt                   ← Identity  (gender, nationality, ...)
+│   │   └── kb_silo_c.txt                   ← Biog.     (place_of_birth, ...)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client3/RoBERTa+ComplEx/           ← this project
+    ├── HOW_TO_RUN_PQ2H_ROBERTA_COMPLEX.txt
+    ├── config_roberta_complex.py            ← all paths + hyperparams
+    ├── dataset.py                           ← PQ2H data loader (copy from Bert+TransE)
+    ├── complex_model.py                     ← ComplEx KGE (copy from Bert+ComplEx)
+    ├── server_roberta_complex.py            ← server with RoBERTa encoder (6d)
+    ├── evaluate_roberta_complex.py          ← evaluation (PQ2H answer types)
+    ├── train_kge_roberta_complex.py         ← run first
+    ├── train_fedv_roberta_complex.py        ← run second
+    ├── models/                              ← auto-created
+    │   ├── silo_a_complex.pt
+    │   ├── silo_b_complex.pt
+    │   ├── silo_c_complex.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_roberta_complex/                ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+KEY DIFFERENCES ACROSS ALL PQ2H ROBERTA EXPERIMENTS
+================================================================
+
+  Model       | Entity dim | Joint dim | Server MLP out | KGE optimizer
+  ────────────────────────────────────────────────────────────────────────
+  TransE      |   d = 256  |  3d = 768 |      768       | Adam
+  DistMult    |   d = 256  |  3d = 768 |      768       | Adam
+  RotatE      |  2d = 512  | 6d = 1536 |     1536       | Adam
+  ComplEx     |  2d = 512  | 6d = 1536 |     1536       | Adam (wd=1e-6)
+
+ComplEx is the only model with weight_decay=1e-6 in the KGE
+optimizer — standard practice for ComplEx training.
+
+ComplEx vs RotatE (both use 6d joint dim):
+  - RotatE: relation embeddings are d-dim phase angles (unit modulus)
+  - ComplEx: relation embeddings are 2d-dim (unconstrained complex)
+  - ComplEx handles symmetric, anti-symmetric, and inverse relations
+    via Hermitian dot product: phi(h,r,t) ≠ phi(t,r,h) in general
+
+Why ComplEx + RoBERTa may be the strongest PQ2H combination:
+  - Silo A contains parents↔children (anti-symmetric) and spouse
+    (symmetric) — ComplEx handles all these patterns
+  - RoBERTa's richer pre-training may better encode relational
+    question phrasings compared to BERT or DistilBERT
+
+
+================================================================
+FILES AND THEIR SOURCES
+================================================================
+
+  config_roberta_complex.py      ← new (CHECKPOINT_DIR + 6d note)
+  complex_model.py               ← copy from Bert+ComplEx (PQ2H)
+  server_roberta_complex.py      ← new (JOINT_DIM=1536, config_roberta_complex)
+  evaluate_roberta_complex.py    ← new (imports config_roberta_complex)
+  train_kge_roberta_complex.py   ← new (ComplEx + weight_decay=1e-6 + *_complex.pt)
+  train_fedv_roberta_complex.py  ← new (ComplEx imports + checkpoint names)
+  dataset.py                     ← copy from Bert+TransE (PQ2H)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client3/RoBERTa+ComplEx
+
+# Step 1 — Train ComplEx KGE on each silo
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_complex.py
+
+  Reads  : Dataset/PQ2H/data/Client3/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_complex.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs_roberta_complex/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training with RoBERTa
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_complex.py
+
+  Reads  : models/silo_{a,b,c}_complex.pt
+           Dataset/PQ2H/data/Client3/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs_roberta_complex/run_<timestamp>/fedv_train_log.{txt,json}
+
