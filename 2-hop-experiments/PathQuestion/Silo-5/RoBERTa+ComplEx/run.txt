@@ -1,0 +1,124 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 5
+  ComplEx + RoBERTa | 5 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client5/RoBERTa+ComplEx
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (5-silo aware)
+  complex_model.py   — ComplEx KGE model (2d complex embeddings)
+  server.py          — 5-silo RoBERTa server (joint_dim = 10d = 2560)
+  evaluate.py        — evaluation (5-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train ComplEx on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_complex.pt
+    silo_b_complex.pt
+    silo_c_complex.pt
+    silo_d_complex.pt
+    silo_e_complex.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt
+    kge_train_log.json
+    fedv_train_log.txt
+    fedv_train_log.json
+
+
+================================================================
+SILO RELATION SPLIT (Client5)
+================================================================
+
+  Silo A — Family       : parents, children, spouse
+  Silo B — Demographics : gender, nationality
+  Silo C — Identity     : ethnicity, religion, cause_of_death
+  Silo D — Occupation   : profession, institution
+  Silo E — Places       : place_of_birth, place_of_death, location
+
+
+================================================================
+KEY DETAILS
+================================================================
+
+ComplEx-specific optimizer (train_kge.py only):
+  Adam(weight_decay=1e-6)  — standard practice for ComplEx.
+  QA-phase optimizers (train_fedv.py) use NO weight decay.
+
+ComplEx vs RotatE (both joint_dim = 10d = 2560):
+  RotatE  : relations are d-dim phase angles (geometric rotation)
+  ComplEx : relations are 2d-dim complex vectors (unconstrained)
+            Handles all relation patterns via Re(<h, r, conj(t)>)
+  Silo A has spouse (symmetric) + parents<->children (anti-symmetric):
+  ComplEx handles both simultaneously.
+
+CRITICAL RoBERTa API (handled in server.py):
+  - NO token_type_ids — BPE tokenizer, not WordPiece
+  - <s> token at position 0 = sequence rep (same as [CLS])
+
+
+================================================================
+FULL Client5 EXPERIMENT MATRIX (ALL 12 RoBERTa experiments)
+================================================================
+
+  Model                | Entity dim | Joint dim  | KGE optim    | Status
+  ─────────────────────────────────────────────────────────────────────────
+  RoBERTa+TransE       |   d = 256  |  5d = 1280 | Adam         | DONE
+  RoBERTa+DistMult     |   d = 256  |  5d = 1280 | Adam         | DONE
+  RoBERTa+RotatE       |  2d = 512  | 10d = 2560 | Adam         | DONE
+  RoBERTa+ComplEx      |  2d = 512  | 10d = 2560 | Adam (wd1e-6)| THIS
+
+All Client5 RoBERTa experiments complete after this run.
+
+
+================================================================
+FULL Client5 ALL-ENCODER MATRIX SUMMARY
+================================================================
+
+  Model                | Entity dim | Joint dim  | Encoder
+  ──────────────────────────────────────────────────────────────
+  Bert+TransE          |   d = 256  |  5d = 1280 | BERT 110M
+  Bert+DistMult        |   d = 256  |  5d = 1280 | BERT 110M
+  Bert+RotatE          |  2d = 512  | 10d = 2560 | BERT 110M
+  Bert+ComplEx         |  2d = 512  | 10d = 2560 | BERT 110M
+  DistilBert+TransE    |   d = 256  |  5d = 1280 | DistilBERT 66M
+  DistilBert+DistMult  |   d = 256  |  5d = 1280 | DistilBERT 66M
+  DistilBert+RotatE    |  2d = 512  | 10d = 2560 | DistilBERT 66M
+  DistilBert+ComplEx   |  2d = 512  | 10d = 2560 | DistilBERT 66M
+  RoBERTa+TransE       |   d = 256  |  5d = 1280 | RoBERTa 125M
+  RoBERTa+DistMult     |   d = 256  |  5d = 1280 | RoBERTa 125M
+  RoBERTa+RotatE       |  2d = 512  | 10d = 2560 | RoBERTa 125M
+  RoBERTa+ComplEx      |  2d = 512  | 10d = 2560 | RoBERTa 125M  <- THIS
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client5/RoBERTa+ComplEx
+
+# Step 1: Train ComplEx on each of the 5 silos
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+# Step 2: Federated QA training with RoBERTa encoder
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
