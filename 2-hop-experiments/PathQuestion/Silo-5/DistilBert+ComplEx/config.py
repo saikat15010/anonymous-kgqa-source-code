@@ -1,34 +1,45 @@
-# config.py — All hyperparameters for FedV-KGQA (PQ2H | Client5)
-# ComplEx + DistilBERT | 5 silos | 2-hop | Freebase13-enriched KB
+# config.py — All hyperparameters for FedV-KGQA
+# Dataset : WebQSP | Client5 | 5 silos | 1-2 hop | Freebase
+# KGE     : ComplEx
+# Encoder : DistilBERT (distilbert-base-uncased)
 #
-# ComplEx entity embeddings are 2*KGE_EMBED_DIM (complex representation).
-# entity_dim = 2d = 512  ->  joint_dim = 5 * 2d = 10d = 2560
-# DistilBERT output = 768-dim (same as BERT-base) -> MLP dims unchanged.
+# Client5 has 5 silos:
+#   Silo A — People & Biography
+#   Silo B — Medicine, Biology & Science
+#   Silo C — Places & Geography
+#   Silo D — Organisations & Society
+#   Silo E — Arts, Sports & Entertainment
+#
+# DistilBERT: 6 layers, ~66M params, 768-dim output.
+# NO token_type_ids — never pass them to DistilBERT.
+#
+# ComplEx entity_dim = 2d = 512  (complex Re||Im stored as reals)
+# joint_dim = 5 * 2d = 5 * 512 = 2560   ← 5 silos × 512
+# DistilBERT output = 768-dim  →  MLP: 768 → 512 → 2560
+#
+# ComplEx vs RotatE (both entity_dim=512, joint_dim=2560 in Client5):
+#   - Relation dim: ComplEx=2d=512, RotatE=d=256 (phase angles)
+#   - Scoring: Re(<h,r,conj(t)>) vs -||h∘e^ir - t||
+#   - Adam weight_decay=1e-6 for KGE phase only (unique to ComplEx)
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-DATA_DIR       = "/home/islamm9/ISWC/Dataset/PQ2H/data/Client5"
-CHECKPOINT_DIR = "/home/islamm9/ISWC/PQ2H/Client5/DistilBert+ComplEx/models"
+DATA_DIR       = "/home/islamm9/ISWC/Dataset/WebQSP/data/Client5"
+CHECKPOINT_DIR = "/home/islamm9/ISWC/WebQSP/Client5/DistilBert+ComplEx/models"
 
-# ── Silo KBs (5 silos) ─────────────────────────────────────────────────────────
-#   Silo A — Family      : parents, children, spouse
-#   Silo B — Demographics: gender, nationality
-#   Silo C — Identity    : ethnicity, religion, cause_of_death
-#   Silo D — Occupation  : profession, institution
-#   Silo E — Places      : place_of_birth, place_of_death, location
-SILO_A_KB = DATA_DIR + "/silos/kb_silo_a.txt"
-SILO_B_KB = DATA_DIR + "/silos/kb_silo_b.txt"
-SILO_C_KB = DATA_DIR + "/silos/kb_silo_c.txt"
-SILO_D_KB = DATA_DIR + "/silos/kb_silo_d.txt"
-SILO_E_KB = DATA_DIR + "/silos/kb_silo_e.txt"
+# ── Silo KBs (5 silos — OWL-enriched) ─────────────────────────────────────────
+SILO_A_KB = DATA_DIR + "/silos/kb_silo_a_enriched.txt"
+SILO_B_KB = DATA_DIR + "/silos/kb_silo_b_enriched.txt"
+SILO_C_KB = DATA_DIR + "/silos/kb_silo_c_enriched.txt"
+SILO_D_KB = DATA_DIR + "/silos/kb_silo_d_enriched.txt"
+SILO_E_KB = DATA_DIR + "/silos/kb_silo_e_enriched.txt"
 
-QA_TRAIN  = DATA_DIR + "/qa/2-hop/qa_train.txt"
-QA_DEV    = DATA_DIR + "/qa/2-hop/qa_dev.txt"
-QA_TEST   = DATA_DIR + "/qa/2-hop/qa_test.txt"
+QA_TRAIN  = DATA_DIR + "/qa/qa_train.txt"
+QA_DEV    = DATA_DIR + "/qa/qa_dev.txt"
+QA_TEST   = DATA_DIR + "/qa/qa_test.txt"
 
 # ── ComplEx KGE ────────────────────────────────────────────────────────────────
-# All values identical to all other Client5 experiments for fair comparison.
-# ComplEx entity AND relation embeddings are 2*KGE_EMBED_DIM.
-KGE_EMBED_DIM   = 256     # complex dim d; real storage = 2*256 = 512 per entity
+# KGE_EMBED_DIM = d. Real storage: 2d per entity AND 2d per relation.
+KGE_EMBED_DIM   = 128     
 KGE_MARGIN      = 1.0
 KGE_NORM        = 2       # kept for API compatibility
 KGE_LR          = 1e-3
@@ -37,12 +48,14 @@ KGE_BATCH_SIZE  = 512
 KGE_NEG_SAMPLES = 10
 
 # ── Question Encoder (DistilBERT + MLP) ────────────────────────────────────────
-# DistilBERT output = 768-dim (same as BERT-base) -> MLP dims unchanged.
-# MLP output must match joint_dim = 5 * 2d = 2560.
-BERT_MODEL      = "distilbert-base-uncased"
-DISTILBERT_DIM  = 768
-MLP_HIDDEN_DIMS = [768, 512]
-MLP_DROPOUT     = 0.1
+# distilbert-base-uncased: 6 layers, 768-dim hidden output.
+# [CLS] token (index 0) used as sequence representation.
+# IMPORTANT: DistilBERT does NOT use token_type_ids — never pass them.
+# joint_dim = 5 * 2d = 2560  →  MLP: 768 → 512 → 2560
+DISTILBERT_MODEL = "distilbert-base-uncased"
+DISTILBERT_DIM   = 768
+MLP_HIDDEN_DIMS  = [768, 512]
+MLP_DROPOUT      = 0.1
 
 # ── Federated QA Training ──────────────────────────────────────────────────────
 QA_LR           = 1e-4
@@ -50,13 +63,13 @@ QA_EPOCHS       = 100
 QA_BATCH_SIZE   = 64
 QA_MARGIN       = 1.0
 
-# ── Topic anchoring flag ───────────────────────────────────────────────────────
+# ── Topic anchoring ────────────────────────────────────────────────────────────
 USE_TOPIC_ANCHORING = True
 
 # ── Candidate filtering ────────────────────────────────────────────────────────
-MAX_NEIGHBORS      = 100
-CANDIDATE_HOP1_CAP = 50
-CANDIDATE_HOP2_CAP = 20
+MAX_NEIGHBORS      = 200
+CANDIDATE_HOP1_CAP = 100
+CANDIDATE_HOP2_CAP = 30
 
 # ── General ────────────────────────────────────────────────────────────────────
 SEED   = 42

@@ -1,11 +1,9 @@
-# dataset.py — Entity/relation indexing + QA/KGE data loaders (PQ2H | Client5)
-#
-# KB format : tab-separated  (h\tr\tt)
-# QA format : question\ttopic_entity\tanswer  (3 columns, single answer per line)
+# dataset.py — Entity/relation indexing + KGE/QA data loaders
+# WebQSP | Client5 | 5 silos | DistilBERT+ComplEx  (model-agnostic)
 
 import torch
 from torch.utils.data import Dataset
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 
 def build_index(kb_path):
@@ -31,8 +29,8 @@ def build_shared_entity_index(*entity2id_dicts):
     return {e: i for i, e in enumerate(sorted(all_entities))}
 
 
-def build_neighbor_index(kb_paths, shared_entity2id, max_neighbors=100):
-    """Bidirectional neighbor index. Accepts list of paths (3 or 5 silos)."""
+def build_neighbor_index(kb_paths, shared_entity2id, max_neighbors=200):
+    """Build adjacency index from all 5 silo KB files."""
     neighbors = defaultdict(set)
     for kb_path in kb_paths:
         with open(kb_path, "r", encoding="utf-8") as f:
@@ -50,18 +48,18 @@ def build_neighbor_index(kb_paths, shared_entity2id, max_neighbors=100):
 
 
 def precompute_candidates(entity_ids, neighbor_index,
-                           hop1_cap=50, hop2_cap=20):
-    print("  Precomputing 2-hop candidate sets...", flush=True)
+                          hop1_cap=100, hop2_cap=30):
+    print("  Precomputing 2-hop candidate sets ...", flush=True)
     candidates = {}
     for eid in entity_ids:
         hop1 = list(neighbor_index.get(eid, []))[:hop1_cap]
         hop2 = set()
         for nb in hop1:
             hop2.update(neighbor_index.get(nb, [])[:hop2_cap])
-        cands = list({eid} | set(hop1) | hop2)
-        candidates[eid] = torch.tensor(cands, dtype=torch.long)
+        candidates[eid] = torch.tensor(
+            list({eid} | set(hop1) | hop2), dtype=torch.long)
     avg = sum(len(v) for v in candidates.values()) // max(len(candidates), 1)
-    print(f"  Done. Avg candidates per entity: {avg}", flush=True)
+    print(f"  Done. Avg candidates: {avg}", flush=True)
     return candidates
 
 
@@ -83,7 +81,7 @@ class KGEDataset(Dataset):
 
 
 def parse_qa_file(qa_path):
-    samples = []
+    samples = OrderedDict()
     with open(qa_path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -92,11 +90,14 @@ def parse_qa_file(qa_path):
             parts = line.split("\t")
             if len(parts) != 3:
                 continue
-            question, topic_entity, answer = parts
-            if question and topic_entity and answer:
-                samples.append((question.strip(), topic_entity.strip(),
-                                 [answer.strip()]))
-    return samples
+            q, topic, ans = parts[0].strip(), parts[1].strip(), parts[2].strip()
+            if not (q and topic and ans):
+                continue
+            key = (q, topic)
+            if key not in samples:
+                samples[key] = []
+            samples[key].append(ans)
+    return [(q, t, answers) for (q, t), answers in samples.items()]
 
 
 class QADataset(Dataset):

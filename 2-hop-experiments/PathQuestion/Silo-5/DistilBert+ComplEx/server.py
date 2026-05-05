@@ -1,69 +1,59 @@
-# server.py — Federated server for Client5 DistilBert+ComplEx (5 silos, PQ2H)
+# server.py — Federated server for WebQSP Client5 DistilBERT+ComplEx (5 silos)
 #
-# ComplEx entity embeddings are 2*embed_dim (complex representation).
-# h_joint = [h_A || h_B || h_C || h_D || h_E] in R^(5 * 2d) = R^2560
+# ComplEx entity_dim = 2d = 512
+# Client5: joint_dim = 5 * 2d = 5 * 512 = 2560  (same as DistilBERT+RotatE)
+# MLP: 768 → 512 → 2560
 #
-# Encoder: DistilBERT (distilbert-base-uncased)
-#   - 768-dim output -> MLP: 768 -> 512 -> 2560
-#
-# Structurally identical to Client5/DistilBert+RotatE server.py
-# (both ComplEx and RotatE use 2d entity embeddings -> JOINT_DIM = 2560).
-# Only difference: config import points to DistilBert+ComplEx paths.
+# DistilBERT: NO token_type_ids, uses DistilBertTokenizer/DistilBertModel.
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import DistilBertTokenizer, DistilBertModel
 
-from config import (BERT_MODEL, MLP_HIDDEN_DIMS, MLP_DROPOUT,
-                    KGE_EMBED_DIM, USE_TOPIC_ANCHORING, DISTILBERT_DIM)
+from config import (DISTILBERT_MODEL, DISTILBERT_DIM, MLP_HIDDEN_DIMS,
+                    MLP_DROPOUT, KGE_EMBED_DIM, USE_TOPIC_ANCHORING)
 
-ENTITY_DIM = 2 * KGE_EMBED_DIM   # 512 per silo
-JOINT_DIM  = 5 * ENTITY_DIM      # 5 x 512 = 2560
+NUM_SILOS  = 5
+ENTITY_DIM = 2 * KGE_EMBED_DIM       # 2d = 512
+JOINT_DIM  = NUM_SILOS * ENTITY_DIM  # 5 × 512 = 2560
 
 
 class QuestionEncoder(nn.Module):
     """
-    DistilBERT [CLS] -> MLP -> q_embed in R^(10d=2560). DistilBERT frozen.
-
-    DistilBERT output = 768-dim (same as BERT-base).
-    ComplEx uses 2d-dim entity embeddings -> joint_dim = 10d = 2560.
-    MLP architecture identical to DistilBert+RotatE.
+    DistilBERT [CLS] → MLP → q_embed in R^2560. DistilBERT frozen.
+    MLP: 768 → 512 → 2560.
+    token_type_ids are NOT passed — DistilBERT does not support them.
     """
 
     def __init__(self):
         super().__init__()
-        self.tokenizer  = DistilBertTokenizer.from_pretrained(BERT_MODEL)
-        self.distilbert = DistilBertModel.from_pretrained(BERT_MODEL)
+        self.tokenizer  = DistilBertTokenizer.from_pretrained(DISTILBERT_MODEL)
+        self.distilbert = DistilBertModel.from_pretrained(DISTILBERT_MODEL)
 
         for param in self.distilbert.parameters():
             param.requires_grad = False
 
-        # MLP: 768 -> 512 -> 2560
         layers, in_dim = [], DISTILBERT_DIM
         for h_dim in MLP_HIDDEN_DIMS:
             layers += [nn.Linear(in_dim, h_dim), nn.ReLU(),
                        nn.Dropout(MLP_DROPOUT)]
             in_dim = h_dim
-        layers += [nn.Linear(in_dim, JOINT_DIM)]
+        layers.append(nn.Linear(in_dim, JOINT_DIM))   # → 2560
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, questions, device):
         enc = self.tokenizer(
             questions, return_tensors="pt", padding=True,
-            truncation=True, max_length=64
-        ).to(device)
+            truncation=True, max_length=64).to(device)
         with torch.no_grad():
             out = self.distilbert(**enc)
-        cls = out.last_hidden_state[:, 0, :]    # (B, 768)
-        return self.mlp(cls)                    # (B, 2560)
+        cls = out.last_hidden_state[:, 0, :]
+        return self.mlp(cls)   # (B, 2560)
 
 
 class FedVServer(nn.Module):
-    """
-    Central server — Client5 DistilBert+ComplEx (5 silos).
-    h_joint(e) = [h_A(e) || h_B(e) || h_C(e) || h_D(e) || h_E(e)] in R^2560
-    """
+    """Central server — WebQSP Client5 DistilBERT+ComplEx (5 silos)."""
 
     def __init__(self, embed_dim):
         super().__init__()
@@ -71,15 +61,15 @@ class FedVServer(nn.Module):
         self.question_encoder = QuestionEncoder()
 
     def fuse(self, h_a, h_b, h_c, h_d, h_e):
-        """h_a ... h_e : (N, 2d) each  ->  (N, 10d=2560)"""
+        """(N, 2d) × 5  →  (N, 5×2d=2560)"""
         return torch.cat([h_a, h_b, h_c, h_d, h_e], dim=-1)
 
     def score_candidates(self, q_embed, h_joint, candidate_ids):
         safe_ids = candidate_ids.clamp(min=0)
         h_cands  = h_joint[safe_ids]
-        q_norm   = F.normalize(q_embed, p=2, dim=-1).unsqueeze(1)
+        q_norm   = F.normalize(q_embed, p=2, dim=-1)
         h_norm   = F.normalize(h_cands, p=2, dim=-1)
-        return (q_norm * h_norm).sum(dim=-1)
+        return (q_norm.unsqueeze(1) * h_norm).sum(dim=-1)
 
     def ranking_loss(self, sim, answer_ids_batch, candidate_ids, margin=1.0):
         device = sim.device
@@ -89,32 +79,29 @@ class FedVServer(nn.Module):
             valid_mask = cands >= 0
             cand_list  = cands[valid_mask].tolist()
             scores     = sim[i][valid_mask]
-            answer_set  = set(answer_ids)
-            pos_indices = [j for j, c in enumerate(cand_list)
-                           if c in answer_set]
-            if not pos_indices:
+            answer_set = set(answer_ids)
+            pos_idx    = [j for j, c in enumerate(cand_list)
+                          if c in answer_set]
+            if not pos_idx:
                 continue
-            best_pos = scores[pos_indices].max()
+            best_pos = scores[pos_idx].max()
             neg_mask = torch.ones(len(cand_list), dtype=torch.bool,
                                   device=device)
-            for j in pos_indices:
+            for j in pos_idx:
                 neg_mask[j] = False
             if neg_mask.sum() == 0:
                 continue
-            hard_neg = scores[neg_mask].max()
-            losses.append(F.relu(margin + hard_neg - best_pos))
+            losses.append(F.relu(margin + scores[neg_mask].max() - best_pos))
         if not losses:
             return torch.tensor(0.0, requires_grad=True, device=device)
         return torch.stack(losses).mean()
 
     def forward(self, questions, topic_ids, h_a, h_b, h_c, h_d, h_e,
                 answer_ids_batch, candidate_ids, device, margin=1.0):
-        h_joint = self.fuse(h_a, h_b, h_c, h_d, h_e)
-        q_embed = self.question_encoder(questions, device)
-        if USE_TOPIC_ANCHORING:
-            q_final = q_embed + h_joint[topic_ids]
-        else:
-            q_final = q_embed
+        h_joint  = self.fuse(h_a, h_b, h_c, h_d, h_e)
+        q_proj   = self.question_encoder(questions, device)
+        q_final  = q_proj + h_joint[topic_ids] if USE_TOPIC_ANCHORING \
+                   else q_proj
         candidate_ids = candidate_ids.to(device)
         sim  = self.score_candidates(q_final, h_joint, candidate_ids)
         loss = self.ranking_loss(sim, answer_ids_batch, candidate_ids, margin)
