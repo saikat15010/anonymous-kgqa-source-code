@@ -1,0 +1,106 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 5
+  TransE + DistilBERT | 5 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client5/DistilBert+TransE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (5-silo aware)
+  transe_model.py    — TransE KGE model (d-dimensional real embeddings)
+  server.py          — 5-silo DistilBERT server  (joint_dim = 5d = 1280)
+  evaluate.py        — evaluation  (5-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train TransE on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_transe.pt
+    silo_b_transe.pt
+    silo_c_transe.pt
+    silo_d_transe.pt
+    silo_e_transe.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt
+    kge_train_log.json
+    fedv_train_log.txt
+    fedv_train_log.json
+
+
+================================================================
+SILO RELATION SPLIT (Client5)
+================================================================
+
+  Silo A — Family       : parents, children, spouse
+  Silo B — Demographics : gender, nationality
+  Silo C — Identity     : ethnicity, religion, cause_of_death
+  Silo D — Occupation   : profession, institution
+  Silo E — Places       : place_of_birth, place_of_death, location
+
+
+================================================================
+KEY DIFFERENCE FROM Client5/Bert+TransE
+================================================================
+
+Only the QA encoder changes. TransE KGE is identical.
+
+  Encoder comparison (same TransE KGE, same joint_dim=5d=1280):
+
+  Experiment            | Encoder              | Params | Layers
+  ──────────────────────────────────────────────────────────────
+  Client5 Bert+TransE   | bert-base-uncased    |  110M  |   12
+  Client5 DistilBert+TE | distilbert-base      |   66M  |    6  <- THIS
+
+DistilBERT has the same 768-dim output as BERT-base, so:
+  - joint_dim stays 5d = 1280 (unchanged)
+  - MLP architecture is identical
+  - Only server.py tokenizer/model class changes
+
+DistilBERT is ~60% faster and ~40% smaller with ~97% of BERT
+NLU performance — useful for faster training cycles.
+
+
+================================================================
+DIMENSION SUMMARY FOR ALL CLIENT5 EXPERIMENTS
+================================================================
+
+  Model                | Entity dim | Joint dim
+  ──────────────────────────────────────────────────────────────
+  Bert+TransE          |   d = 256  |  5d = 1280
+  DistilBert+TransE    |   d = 256  |  5d = 1280  <- THIS
+  Bert+DistMult        |   d = 256  |  5d = 1280
+  Bert+RotatE          |  2d = 512  | 10d = 2560
+  Bert+ComplEx         |  2d = 512  | 10d = 2560
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client5/DistilBert+TransE
+
+# Step 1: Train TransE on each of the 5 silos independently
+# (DistilBERT not involved in KGE training)
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+# Step 2: Federated QA training with DistilBERT encoder
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
