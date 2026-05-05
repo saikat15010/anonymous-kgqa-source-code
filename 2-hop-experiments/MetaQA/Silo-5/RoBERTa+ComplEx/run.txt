@@ -1,0 +1,5 @@
+cd /home/islamm9/ISWC/Client5/RoBERTa+ComplEx
+
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_complex.py
+
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_complex.py
