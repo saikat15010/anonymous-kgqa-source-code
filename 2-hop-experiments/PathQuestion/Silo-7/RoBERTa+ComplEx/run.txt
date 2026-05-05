@@ -1,0 +1,106 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 7
+  ComplEx + RoBERTa | 7 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client7/RoBERTa+ComplEx
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (7-silo aware)
+  complex_model.py   — ComplEx KGE model (2d complex embeddings)
+  server.py          — 7-silo RoBERTa server (joint_dim = 14d = 3584)
+  evaluate.py        — evaluation (7-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train ComplEx on all 7 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_complex.pt  ... silo_g_complex.pt   (7 checkpoints)
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+7-SILO RELATION SPLIT (Client7)
+================================================================
+
+  Silo A — Marriage    : spouse
+  Silo B — Lineage     : parents, children
+  Silo C — Vitals      : gender, cause_of_death
+  Silo D — Identity    : ethnicity, religion
+  Silo E — Citizenship : nationality
+  Silo F — Occupation  : profession, institution
+  Silo G — Places      : place_of_birth, place_of_death, location
+
+
+================================================================
+KEY DETAILS
+================================================================
+
+ComplEx-specific optimizer (train_kge.py ONLY):
+  Adam(weight_decay=1e-6)
+  QA-phase optimizers in train_fedv.py use NO weight decay.
+
+ComplEx vs RotatE (both joint_dim = 14d = 3584):
+  RotatE  : relations are d-dim phase angles (geometric rotation)
+  ComplEx : relations are 2d-dim complex vectors (unconstrained)
+            Re(<h,r,conj(t)>) handles symmetric AND anti-symmetric
+  Silo A (spouse) is symmetric; Silo B (parents<->children) is
+  anti-symmetric — ComplEx handles both simultaneously.
+
+
+================================================================
+FULL CLIENT7 ROBERTA EXPERIMENT MATRIX — ALL COMPLETE
+================================================================
+
+  Model              | Entity dim | Joint dim   | KGE optim    | Status
+  ──────────────────────────────────────────────────────────────────────────
+  RoBERTa+TransE     |   d = 256  |  7d = 1792  | Adam         | DONE
+  RoBERTa+DistMult   |   d = 256  |  7d = 1792  | Adam         | DONE
+  RoBERTa+RotatE     |  2d = 512  | 14d = 3584  | Adam         | DONE
+  RoBERTa+ComplEx    |  2d = 512  | 14d = 3584  | Adam(wd=1e-6)| THIS ✓
+
+All 4 Client7 RoBERTa experiments complete after this run.
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client7/RoBERTa+ComplEx
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+COMPLETE CLIENT7 EXPERIMENT MATRIX — ALL 12 DONE ✓
+================================================================
+
+  Encoder     | TransE | DistMult | RotatE | ComplEx
+  ────────────────────────────────────────────────────────────
+  BERT        |  DONE  |   DONE   |  DONE  |  DONE
+  DistilBERT  |  DONE  |   DONE   |  DONE  |  DONE
+  RoBERTa     |  DONE  |   DONE   |  DONE  |  THIS ✓
+
+All 12 Client7 PQ2H experiments complete!
+
+
