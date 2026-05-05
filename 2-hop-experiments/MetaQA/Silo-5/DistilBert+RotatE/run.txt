@@ -1,0 +1,5 @@
+cd /home/islamm9/ISWC/Client5/DistilBert+RotatE
+
+CUDA_VISIBLE_DEVICES=1 python train_kge_distilbert_rotate.py
+
+CUDA_VISIBLE_DEVICES=1 python train_fedv_distilbert_rotate.py
