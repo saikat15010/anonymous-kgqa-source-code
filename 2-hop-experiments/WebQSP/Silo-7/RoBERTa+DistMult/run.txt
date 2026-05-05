@@ -1,0 +1,84 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 7
+  RoBERTa + DistMult | 7 Silos | 1-2 hop | Freebase | OWL-enriched KB
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client7/RoBERTa+DistMult
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (7-silo aware)
+  distmult_model.py  — DistMult KGE model (d-dim real, bilinear scoring)
+  server.py          — 7-silo RoBERTa server (joint_dim = 7d = 1792)
+  evaluate.py        — evaluation (7-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train DistMult on all 7 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+DISTMULT vs TRANSE (same encoder, same dimensions)
+================================================================
+
+  Property             TransE               DistMult
+  ─────────────────────────────────────────────────────────────
+  Scoring              -||h + r - t||_2     sum(h * r * t)
+  L2 normalisation     YES (every step)     NO
+  Weight decay         No                   No
+  Checkpoint names     silo_*_transe.pt     silo_*_distmult.pt
+  entity_dim           256                  256  (same)
+  joint_dim (Client7)  1792                 1792  (same)
+
+
+================================================================
+KEY DIMENSIONS
+================================================================
+
+  entity_dim  = d   = 256
+  joint_dim   = 7d  = 1792      ← 7 silos × 256
+  MLP         : 768 → 512 → 1792
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_distmult.pt  ...  silo_g_distmult.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client7/RoBERTa+DistMult
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT7 ROBERTA EXPERIMENT MATRIX
+================================================================
+
+  Encoder  | TransE | DistMult | RotatE | ComplEx
+  ─────────────────────────────────────────────────
+  BERT     |  DONE  |  DONE    |  DONE  |  DONE
+  DistilBERT|  DONE  |  DONE    |  DONE  |  DONE
+  RoBERTa  |  DONE  |  THIS ✓  |        |
+
+================================================================
