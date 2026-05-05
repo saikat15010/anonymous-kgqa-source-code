@@ -1,0 +1,155 @@
+================================================================
+  FedV-KGQA — ComplEx + RoBERTa Experiment
+  3 Silos | 2-hop | OWL2-Enriched KB
+================================================================
+shortcut
+
+cd /home/islamm9/ISWC/Client3/RoBERTa+ComplEx
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_complex.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_complex.py
+
+
+Project folder : /home/islamm9/ISWC/Client3/RoBERTa+ComplEx/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (unified shared dataset — no re-enrichment or re-splitting needed)
+
+
+================================================================
+KEY DIFFERENCES FROM OTHER EXPERIMENTS
+================================================================
+
+This experiment combines:
+  - ComplEx KGE: Hermitian dot product scoring in ℂᵈ (complex, 6d joint)
+  - RoBERTa:     robustly pre-trained encoder (12 layers, 125M params)
+
+Full experiment matrix (12 experiments total):
+
+  Experiment          | KGE    | Encoder    | Entity dim | Joint dim
+  ──────────────────────────────────────────────────────────────────
+  Bert+TransE         | TE     | BERT(110M) |  d = 256   | 3d = 768
+  Bert+DistMult       | DM     | BERT(110M) |  d = 256   | 3d = 768
+  Bert+RotatE         | RE     | BERT(110M) | 2d = 512   | 6d = 1536
+  Bert+ComplEx        | CX     | BERT(110M) | 2d = 512   | 6d = 1536
+  DistilBert+TransE   | TE     | DB(66M)    |  d = 256   | 3d = 768
+  DistilBert+DistMult | DM     | DB(66M)    |  d = 256   | 3d = 768
+  DistilBert+RotatE   | RE     | DB(66M)    | 2d = 512   | 6d = 1536
+  DistilBert+ComplEx  | CX     | DB(66M)    | 2d = 512   | 6d = 1536
+  RoBERTa+TransE      | TE     | RoB(125M)  |  d = 256   | 3d = 768
+  RoBERTa+DistMult    | DM     | RoB(125M)  |  d = 256   | 3d = 768
+  RoBERTa+ComplEx     | CX     | RoB(125M)  | 2d = 512   | 6d = 1536  ← THIS
+  (RoBERTa+RotatE pending)
+
+  TE=TransE, DM=DistMult, RE=RotatE, CX=ComplEx, DB=DistilBERT, RoB=RoBERTa
+
+ComplEx vs RotatE (same entity dim, same joint dim):
+  - RotatE:  r ∈ ℂᵈ  unit modulus   φ = −||h ∘ r − t||
+  - ComplEx: r ∈ ℂᵈ  unconstrained  φ = Re(<h, r, conj(t)>)
+  - ComplEx handles anti-symmetric relations via unconstrained complex relations
+  - ComplEx uses weight_decay=1e-6 on KGE Adam; RotatE does not
+  - ComplEx L2-normalises entity embeddings; RotatE does not
+
+RoBERTa vs BERT-base (same 768-dim, stronger training):
+  - 12 layers (same), 125M params vs 110M, 768-dim output (same)
+  - 160GB training data vs 16GB, larger batches, no NSP, dynamic masking
+  - BPE tokenizer: no token_type_ids, <s> as sequence token
+
+All hyperparameters identical across all experiments.
+
+
+================================================================
+PROJECT STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/                   ← shared, read-only
+│   ├── kb_enriched_owl.txt
+│   ├── silos/kb_silo_{a,b,c}.txt
+│   └── qa/2-hop/qa_{train,dev,test}.txt
+│
+└── Client3/RoBERTa+ComplEx/
+    ├── HOW_TO_RUN_ROBERTA_COMPLEX.txt
+    ├── config_roberta_complex.py            ← all paths + hyperparams
+    ├── server_roberta_complex.py            ← server with RoBERTa encoder
+    ├── evaluate_roberta_complex.py          ← evaluation (MRR, Hits@k)
+    ├── complex_model.py                     ← copy from Bert+ComplEx
+    ├── dataset.py                           ← copy from Bert+TransE
+    ├── train_kge_roberta_complex.py         ← run first  (Phase 1)
+    ├── train_fedv_roberta_complex.py        ← run second (Phase 2)
+    ├── models/                              ← auto-created
+    │   ├── silo_a_complex.pt                  (N, 512) entity emb [re|im]
+    │   ├── silo_b_complex.pt
+    │   ├── silo_c_complex.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_roberta_complex/                ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+FILES TO COPY FROM EXISTING EXPERIMENTS
+================================================================
+
+  # ComplEx model (from Bert+ComplEx)
+  cp /home/islamm9/ISWC/Client3/Bert+ComplEx/complex_model.py \
+     /home/islamm9/ISWC/Client3/RoBERTa+ComplEx/
+
+  # Dataset utilities (from Bert+TransE — shared across all experiments)
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py \
+     /home/islamm9/ISWC/Client3/RoBERTa+ComplEx/
+
+Do NOT copy: server_complex.py, evaluate_complex.py, config_complex.py
+  (replaced by the roberta_complex variants in this folder)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/Client3/RoBERTa+ComplEx
+
+# Step 1 — Train ComplEx KGE on each silo independently
+# RoBERTa is NOT involved — KGE training is encoder-agnostic.
+# Note: Adam uses weight_decay=1e-6 (ComplEx standard; not used by others)
+# Expected: ~45-75 min on GPU
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_complex.py
+
+# Step 2 — Federated QA training with RoBERTa encoder
+# MLP maps 768 → 512 → 1536  (larger than TransE/DistMult's 768 → 512 → 768)
+# Expected: ~1.5-2.5 hours on GPU  (larger joint dim increases memory/compute)
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_complex.py
+
+
+================================================================
+EMBEDDING DIMENSIONS
+================================================================
+
+  Component          | RoB+TE / RoB+DM | RoB+CX (this)
+  ────────────────────────────────────────────────────────
+  KGE_EMBED_DIM      |    256          |    256  (complex dim)
+  Entity storage     |    256          |    512  (= 2×256 [re|im])
+  h_A, h_B, h_C      |   (N,256)       |  (N,512)
+  h_joint            |   (N,768)       | (N,1536)
+  RoBERTa [<s>]      |   (B,768)       |  (B,768) same
+  MLP output q_embed |   (B,768)       | (B,1536)
+  Gradient/silo      |   (N,256)       |  (N,512)
+  KGE weight decay   |    None         |   1e-6
+  Entity L2-norm     |    Yes          |    Yes
+
+
+================================================================
+NORMALISATION DETAILS FOR COMPLEX KGE MODELS
+================================================================
+
+  Model    | Entity L2-norm | Relation constraint | KGE weight decay
+  ────────────────────────────────────────────────────────────────────
+  TransE   | Yes (post-step)| None               | None
+  DistMult | Yes (post-step)| None               | None
+  RotatE   | No             | Unit modulus (θ)   | None
+  ComplEx  | Yes (post-step)| None (unconstrained)| 1e-6 (Adam)
+
+
