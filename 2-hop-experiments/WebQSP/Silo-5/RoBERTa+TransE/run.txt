@@ -1,0 +1,90 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 5
+  RoBERTa + TransE | 5 Silos | 1-2 hop | Freebase | OWL-enriched KB
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client5/RoBERTa+TransE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (5-silo aware)
+  transe_model.py    — TransE KGE model (d-dim real, translation scoring)
+  server.py          — 5-silo RoBERTa server (joint_dim = 5d = 1280)
+  evaluate.py        — evaluation (5-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train TransE on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+ROBERTA vs BERT vs DISTILBERT
+================================================================
+
+  Property              BERT         DistilBERT   RoBERTa
+  ─────────────────────────────────────────────────────────────
+  Transformer layers    12           6            12
+  Parameters            ~110M        ~66M         ~125M
+  Hidden size           768          768          768  (same)
+  token_type_ids        YES          NO           NO  ← critical
+  Tokeniser             WordPiece    WordPiece    BPE
+  Output dim            768          768          768  (same)
+  joint_dim (Client5)   1280         1280         1280  (same)
+  MLP                   768→512→1280 768→512→1280 768→512→1280
+
+
+================================================================
+KEY DIMENSIONS
+================================================================
+
+  entity_dim  = d   = 256
+  joint_dim   = 5d  = 1280      ← 5 silos × 256
+  MLP         : 768 → 512 → 1280
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_transe.pt
+    silo_b_transe.pt
+    silo_c_transe.pt
+    silo_d_transe.pt
+    silo_e_transe.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client5/RoBERTa+TransE
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT5 ROBERTA EXPERIMENT MATRIX
+================================================================
+
+  Encoder  | TransE | DistMult | RotatE | ComplEx
+  ─────────────────────────────────────────────────
+  BERT     |  DONE  |  DONE    |  DONE  |  DONE
+  DistilBERT|  DONE  |  DONE    |  DONE  |  DONE
+  RoBERTa  |  THIS  |          |        |
+
+================================================================
