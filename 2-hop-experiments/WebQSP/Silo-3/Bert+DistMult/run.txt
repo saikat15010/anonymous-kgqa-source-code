@@ -1,0 +1,93 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 3
+  BERT + DistMult | 3 Silos | 1-2 hop | Freebase | OWL-enriched KB
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client3/Bert+DistMult
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (3-silo aware)
+  distmult_model.py  — DistMult KGE model (d-dim real, bilinear scoring)
+  server.py          — 3-silo BERT server (joint_dim = 3d = 768)
+  evaluate.py        — evaluation (3-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train DistMult on all 3 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+DATASET PATHS (unified, shared with all WebQSP experiments)
+================================================================
+
+  OWL-enriched KB Silos (from ontology_enrich_kb.py):
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/silos/kb_silo_a_enriched.txt
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/silos/kb_silo_b_enriched.txt
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/silos/kb_silo_c_enriched.txt
+
+  QA Files (from prepare_webqsp.py):
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/qa/qa_train.txt
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/qa/qa_dev.txt
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/qa/qa_test.txt
+
+
+================================================================
+KEY DIFFERENCES: DistMult vs other KGEs
+================================================================
+
+  Property             TransE       DistMult     RotatE       ComplEx
+  ───────────────────────────────────────────────────────────────────
+  Scoring              -||h+r-t||   sum(h*r*t)   -||h∘e^ir-t| Re(<h,r,t*>)
+  entity_dim           256          256          512          512
+  joint_dim            768          768          1536         1536
+  L2 normalisation     YES          NO           YES          YES
+  Weight decay (KGE)   No           No           No           1e-6
+  Symmetric rels       No           YES          YES          YES
+  Checkpoint names     *_transe     *_distmult   *_rotate     *_complex
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_distmult.pt
+    silo_b_distmult.pt
+    silo_c_distmult.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client3/Bert+DistMult
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT3 EXPERIMENT MATRIX
+================================================================
+
+  Encoder    | TransE | DistMult | RotatE | ComplEx
+  ─────────────────────────────────────────────────
+  BERT       |  DONE  |  THIS ✓  |  DONE  |  DONE
+  DistilBERT |        |          |        |
+  RoBERTa    |        |          |        |
+
+================================================================
