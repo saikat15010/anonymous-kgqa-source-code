@@ -1,0 +1,121 @@
+================================================================
+  FedV-KGQA — TransE + DistilBERT Experiment
+  3 Silos | 2-hop | OWL2-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/Client3/DistilBert+TransE
+
+# Step 1 — Train TransE KGE on each silo (~30-60 min on GPU)
+python train_kge_distilbert_transe.py
+
+# Step 2 — Federated QA training with DistilBERT (~1-2 hours on GPU)
+# Note: DistilBERT is faster than BERT, so Step 2 should be notably quicker
+python train_fedv_distilbert_transe.py
+
+
+
+
+Project folder : /home/islamm9/ISWC/Client3/DistilBert+TransE/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (shared — no re-enrichment or re-splitting needed)
+
+
+================================================================
+KEY DIFFERENCE FROM Bert+TransE
+================================================================
+
+Only the QA encoder changes. TransE KGE is identical.
+
+  Component      | Bert+TransE          | DistilBert+TransE
+  ─────────────────────────────────────────────────────────────
+  KGE model      | TransE               | TransE  (same)
+  Encoder model  | bert-base-uncased    | distilbert-base-uncased
+  Encoder layers | 12                   | 6
+  Encoder params | ~110M                | ~66M
+  Encoder output | 768-dim              | 768-dim  (same)
+  h_joint dim    | 3d = 768             | 3d = 768  (same)
+  MLP dims       | [768, 512, 768]      | [768, 512, 768]  (same)
+  All other HP   | identical            | identical
+
+DistilBERT is ~40% smaller and ~60% faster than BERT-base
+while retaining ~97% of BERT's NLP performance on most tasks.
+This experiment tests whether the lighter encoder is sufficient
+for the QA task, or whether BERT's additional capacity matters.
+
+
+================================================================
+PROJECT STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/               ← shared, read-only
+│   ├── kb_enriched_owl.txt             ← already exists
+│   ├── silos/kb_silo_{a,b,c}.txt      ← already exists
+│   └── qa/2-hop/qa_{train,dev,test}.txt
+│
+└── Client3/DistilBert+TransE/
+    ├── HOW_TO_RUN_DISTILBERT_TRANSE.txt
+    ├── config_distilbert_transe.py     ← all paths + hyperparams
+    ├── server_distilbert.py            ← server with DistilBERT encoder
+    ├── evaluate_distilbert.py          ← evaluation
+    ├── transe_model.py                 ← copy from Bert+TransE
+    ├── dataset.py                      ← copy from Bert+TransE
+    ├── train_kge_distilbert_transe.py  ← run first
+    ├── train_fedv_distilbert_transe.py ← run second
+    ├── models/                         ← auto-created
+    │   ├── silo_a_transe.pt
+    │   ├── silo_b_transe.pt
+    │   ├── silo_c_transe.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_distilbert_transe/         ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+FILES TO COPY FROM Bert+TransE
+================================================================
+
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py \
+     /home/islamm9/ISWC/Client3/DistilBert+TransE/
+
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/transe_model.py \
+     /home/islamm9/ISWC/Client3/DistilBert+TransE/
+
+Do NOT copy: server.py, evaluate.py, config.py
+  (replaced by server_distilbert.py, evaluate_distilbert.py,
+   config_distilbert_transe.py)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/Client3/DistilBert+TransE
+
+# Step 1 — Train TransE KGE on each silo (~30-60 min on GPU)
+CUDA_VISIBLE_DEVICES=1 python train_kge_distilbert_transe.py
+
+# Step 2 — Federated QA training with DistilBERT (~1-2 hours on GPU)
+# Note: DistilBERT is faster than BERT, so Step 2 should be notably quicker
+CUDA_VISIBLE_DEVICES=1 python train_fedv_distilbert_transe.py
+
+
+================================================================
+WHAT IS AUTOMATICALLY CREATED
+================================================================
+
+  models/                           created by train_kge_distilbert_transe.py
+  models/silo_{a,b,c}_transe.pt     created by train_kge_distilbert_transe.py
+  models/shared_entity2id.json      created by train_kge_distilbert_transe.py
+  models/fedv_best.pt               created by train_fedv_distilbert_transe.py
+  logs_distilbert_transe/run_.../   created by train_kge_distilbert_transe.py
+
+
