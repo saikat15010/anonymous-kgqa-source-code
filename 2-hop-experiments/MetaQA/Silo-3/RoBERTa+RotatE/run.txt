@@ -1,0 +1,153 @@
+================================================================
+  FedV-KGQA — RotatE + RoBERTa Experiment
+  3 Silos | 2-hop | OWL2-Enriched KB
+================================================================
+shortcut
+
+cd /home/islamm9/ISWC/Client3/RoBERTa+RotatE
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_rotate.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_rotate.py
+
+Project folder : /home/islamm9/ISWC/Client3/RoBERTa+RotatE/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (unified shared dataset — no re-enrichment or re-splitting needed)
+
+
+================================================================
+KEY DIFFERENCES FROM OTHER EXPERIMENTS
+================================================================
+
+This experiment combines:
+  - RotatE KGE:  complex rotation scoring (2d entity, 6d joint)
+  - RoBERTa:     robustly pre-trained encoder (12 layers, 125M params)
+
+Full 12-experiment matrix:
+
+  Experiment          | KGE | Encoder    | Entity dim | Joint dim
+  ────────────────────────────────────────────────────────────────
+  Bert+TransE         | TE  | BERT(110M) |  d = 256   | 3d = 768
+  Bert+DistMult       | DM  | BERT(110M) |  d = 256   | 3d = 768
+  Bert+RotatE         | RE  | BERT(110M) | 2d = 512   | 6d = 1536
+  Bert+ComplEx        | CX  | BERT(110M) | 2d = 512   | 6d = 1536
+  DistilBert+TransE   | TE  | DB(66M)    |  d = 256   | 3d = 768
+  DistilBert+DistMult | DM  | DB(66M)    |  d = 256   | 3d = 768
+  DistilBert+RotatE   | RE  | DB(66M)    | 2d = 512   | 6d = 1536
+  DistilBert+ComplEx  | CX  | DB(66M)    | 2d = 512   | 6d = 1536
+  RoBERTa+TransE      | TE  | RoB(125M)  |  d = 256   | 3d = 768
+  RoBERTa+DistMult    | DM  | RoB(125M)  |  d = 256   | 3d = 768
+  RoBERTa+ComplEx     | CX  | RoB(125M)  | 2d = 512   | 6d = 1536
+  RoBERTa+RotatE      | RE  | RoB(125M)  | 2d = 512   | 6d = 1536  ← THIS
+
+  TE=TransE, DM=DistMult, RE=RotatE, CX=ComplEx
+  DB=DistilBERT, RoB=RoBERTa
+
+RotatE vs ComplEx (same entity/joint dim, different scoring):
+  - RotatE:  r ∈ ℂᵈ unit modulus   φ = −||h ∘ r − t||
+  - ComplEx: r ∈ ℂᵈ unconstrained  φ = Re(<h, r, conj(t)>)
+  - RotatE: NO weight_decay on KGE Adam  (ComplEx uses 1e-6)
+  - RotatE: NO entity L2-norm post-step  (ComplEx normalises)
+  - RotatE: relation dim = d (phase only); ComplEx relation dim = 2d [re|im]
+  - RotatE: superior for compositional/inverse patterns (OWL chains)
+
+RoBERTa vs BERT-base (same 768-dim output, stronger pre-training):
+  - 12 layers, ~125M params, 160GB training data, larger batches, no NSP
+  - BPE tokenizer: no token_type_ids, <s> = sequence token (≡ [CLS])
+
+All hyperparameters identical across all 12 experiments.
+
+
+================================================================
+PROJECT STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/                 ← shared, read-only
+│   ├── kb_enriched_owl.txt
+│   ├── silos/kb_silo_{a,b,c}.txt
+│   └── qa/2-hop/qa_{train,dev,test}.txt
+│
+└── Client3/RoBERTa+RotatE/
+    ├── HOW_TO_RUN_ROBERTA_ROTATE.txt
+    ├── config_roberta_rotate.py           ← all paths + hyperparams
+    ├── server_roberta_rotate.py           ← server with RoBERTa encoder
+    ├── evaluate_roberta_rotate.py         ← evaluation (MRR, Hits@k)
+    ├── rotate_model.py                    ← copy from Bert+RotatE
+    ├── dataset.py                         ← copy from Bert+TransE
+    ├── train_kge_roberta_rotate.py        ← run first  (Phase 1)
+    ├── train_fedv_roberta_rotate.py       ← run second (Phase 2)
+    ├── models/                            ← auto-created
+    │   ├── silo_a_rotate.pt                 (N, 512) entity emb [re|im]
+    │   ├── silo_b_rotate.pt
+    │   ├── silo_c_rotate.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_roberta_rotate/               ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+FILES TO COPY FROM EXISTING EXPERIMENTS
+================================================================
+
+  # RotatE model (from Bert+RotatE)
+  cp /home/islamm9/ISWC/Client3/Bert+RotatE/rotate_model.py \
+     /home/islamm9/ISWC/Client3/RoBERTa+RotatE/
+
+  # Dataset utilities (from Bert+TransE — shared across all experiments)
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py \
+     /home/islamm9/ISWC/Client3/RoBERTa+RotatE/
+
+Do NOT copy: server_rotate.py, evaluate_rotate.py, config_rotate.py
+  (replaced by the roberta_rotate variants in this folder)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/Client3/RoBERTa+RotatE
+
+# Step 1 — Train RotatE KGE on each silo independently
+# RoBERTa is NOT involved — KGE training is encoder-agnostic.
+# No weight_decay, no entity L2-norm (unlike TransE/DistMult/ComplEx)
+# Expected: ~45-75 min on GPU
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_rotate.py
+
+# Step 2 — Federated QA training with RoBERTa encoder
+# MLP maps 768 → 512 → 1536  (larger than TransE/DistMult's 768→512→768)
+# Expected: ~1.5-2.5 hours on GPU
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_rotate.py
+
+
+================================================================
+EMBEDDING DIMENSIONS
+================================================================
+
+  Component          | RoB+TE/DM (3d) | RoB+RE/CX (6d, this)
+  ─────────────────────────────────────────────────────────────
+  KGE_EMBED_DIM      |    256         |    256  (complex dim)
+  Entity storage     |    256         |    512  (= 2×256 [re|im])
+  h_A, h_B, h_C      |   (N,256)      |  (N,512)
+  h_joint            |   (N,768)      | (N,1536)
+  RoBERTa [<s>]      |   (B,768)      |  (B,768) same
+  MLP output q_embed |   (B,768)      | (B,1536)
+  Gradient/silo      |   (N,256)      |  (N,512)
+
+
+================================================================
+NORMALISATION COMPARISON ACROSS ALL KGE MODELS
+================================================================
+
+  Model    | Entity L2-norm | Relation constraint | KGE weight decay
+  ────────────────────────────────────────────────────────────────────
+  TransE   | Yes (post-step)| None               | None
+  DistMult | Yes (post-step)| None               | None
+  RotatE   | No             | Unit modulus (θ)   | None
+  ComplEx  | Yes (post-step)| None (unconstrained)| 1e-6 (Adam)
+
+
