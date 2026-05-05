@@ -1,0 +1,109 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment
+  RotatE + BERT | 3 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client3/Bert+RotatE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client3/          ← shared, read-only
+│   ├── silos/
+│   │   ├── kb_silo_a.txt               ← Family    (children, parents, spouse)
+│   │   ├── kb_silo_b.txt               ← Identity  (gender, nationality, ...)
+│   │   └── kb_silo_c.txt               ← Biog.     (place_of_birth, institution, ...)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client3/Bert+RotatE/           ← this project
+    ├── HOW_TO_RUN_PQ2H_ROTATE.txt
+    ├── config.py                        ← all paths + hyperparams
+    ├── dataset.py                       ← PQ2H data loader (copy from Bert+TransE)
+    ├── rotate_model.py                  ← RotatE KGE model
+    ├── server.py                        ← federated server (6d joint dim)
+    ├── evaluate.py                      ← evaluation (PQ2H answer types)
+    ├── train_kge.py                     ← run first
+    ├── train_fedv.py                    ← run second
+    ├── models/                          ← auto-created
+    │   ├── silo_a_rotate.pt
+    │   ├── silo_b_rotate.pt
+    │   ├── silo_c_rotate.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs/                            ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+KEY DIFFERENCE FROM TransE / DistMult (PQ2H)
+================================================================
+
+RotatE represents entities in COMPLEX space:
+  entity embedding dim = 2 * KGE_EMBED_DIM  (real + imaginary)
+  h_joint = [h_A || h_B || h_C] ∈ ℝ^(6d)  (instead of 3d)
+
+This requires a dedicated server.py (6d MLP output) and
+evaluate.py (imports from local config).
+
+  Model     | Entity dim | Joint dim | Scoring
+  ──────────────────────────────────────────────────
+  TransE    |   d = 256  |  3d = 768 | -||h+r-t||
+  DistMult  |   d = 256  |  3d = 768 | <h,r,t>
+  RotatE    |  2d = 512  | 6d = 1536 | -||h∘r-t|| (complex)
+
+RotatE is particularly well-suited for PQ2H because Silo A
+contains parents/children (inverse of each other) and spouse
+(symmetric) — exactly the relation patterns RotatE handles best
+via its unit-modulus rotation constraint.
+
+Files that changed vs Bert+TransE (PQ2H):
+  config.py         — CHECKPOINT_DIR updated
+  rotate_model.py   — new (replaces transe_model.py)
+  server.py         — new (6d output instead of 3d)
+  evaluate.py       — new (imports from local config)
+  train_kge.py      — RotatE-specific imports + checkpoint names
+  train_fedv.py     — RotatE-specific imports + checkpoint names
+
+File copied unchanged:
+  dataset.py        — no model-specific logic
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client3/Bert+RotatE
+
+# Step 1 — Train RotatE KGE on each silo
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+  Reads  : Dataset/PQ2H/data/Client3/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_rotate.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+  Reads  : models/silo_{a,b,c}_rotate.pt
+           Dataset/PQ2H/data/Client3/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs/run_<timestamp>/fedv_train_log.{txt,json}
+
+
