@@ -1,0 +1,110 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment
+  RotatE + RoBERTa | 3 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client3/RoBERTa+RotatE
+python train_kge_roberta_rotate.py
+python train_fedv_roberta_rotate.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client3/              ← shared, read-only
+│   ├── silos/
+│   │   ├── kb_silo_a.txt                   ← Family    (children, parents, spouse)
+│   │   ├── kb_silo_b.txt                   ← Identity  (gender, nationality, ...)
+│   │   └── kb_silo_c.txt                   ← Biog.     (place_of_birth, ...)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client3/RoBERTa+RotatE/            ← this project
+    ├── HOW_TO_RUN_PQ2H_ROBERTA_ROTATE.txt
+    ├── config_roberta_rotate.py             ← all paths + hyperparams
+    ├── dataset.py                           ← PQ2H data loader (copy from Bert+TransE)
+    ├── rotate_model.py                      ← RotatE KGE (copy from Bert+RotatE)
+    ├── server_roberta_rotate.py             ← server with RoBERTa encoder (6d)
+    ├── evaluate_roberta_rotate.py           ← evaluation (PQ2H answer types)
+    ├── train_kge_roberta_rotate.py          ← run first
+    ├── train_fedv_roberta_rotate.py         ← run second
+    ├── models/                              ← auto-created
+    │   ├── silo_a_rotate.pt
+    │   ├── silo_b_rotate.pt
+    │   ├── silo_c_rotate.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_roberta_rotate/                 ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+CRITICAL DIMENSION DIFFERENCE vs RoBERTa+TransE / RoBERTa+DistMult
+================================================================
+
+RotatE entity embeddings are 2d-dimensional (complex), so:
+  entity_dim = 2d = 512   (not d = 256)
+  joint_dim  = 6d = 1536  (not 3d = 768)
+
+The server_roberta_rotate.py MLP output is 1536 — this is the
+critical difference from the TransE/DistMult RoBERTa servers.
+
+  Model       | Entity dim | Joint dim | Server MLP out
+  ─────────────────────────────────────────────────────
+  TransE      |   d = 256  |  3d = 768 |      768
+  DistMult    |   d = 256  |  3d = 768 |      768
+  RotatE      |  2d = 512  | 6d = 1536 |     1536  ← this experiment
+  ComplEx     |  2d = 512  | 6d = 1536 |     1536
+
+All experiments use the same RoBERTa input dim (768) and
+MLP hidden dims ([768, 512]). Only the final MLP layer changes.
+
+
+================================================================
+FILES AND THEIR SOURCES
+================================================================
+
+  config_roberta_rotate.py      ← new (CHECKPOINT_DIR + 6d note)
+  rotate_model.py               ← copy from Bert+RotatE (PQ2H)
+  server_roberta_rotate.py      ← new (JOINT_DIM=1536, config_roberta_rotate)
+  evaluate_roberta_rotate.py    ← new (imports config_roberta_rotate)
+  train_kge_roberta_rotate.py   ← new (RotatE + *_rotate.pt)
+  train_fedv_roberta_rotate.py  ← new (RotatE imports + checkpoint names)
+  dataset.py                    ← copy from Bert+TransE (PQ2H)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client3/RoBERTa+RotatE
+
+# Step 1 — Train RotatE KGE on each silo
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_rotate.py
+
+  Reads  : Dataset/PQ2H/data/Client3/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_rotate.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs_roberta_rotate/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training with RoBERTa
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_rotate.py
+
+  Reads  : models/silo_{a,b,c}_rotate.pt
+           Dataset/PQ2H/data/Client3/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs_roberta_rotate/run_<timestamp>/fedv_train_log.{txt,json}
+
+
