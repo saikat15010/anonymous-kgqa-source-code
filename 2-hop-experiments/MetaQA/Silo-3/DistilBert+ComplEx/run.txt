@@ -1,0 +1,159 @@
+================================================================
+  FedV-KGQA — ComplEx + DistilBERT Experiment
+  3 Silos | 2-hop | OWL2-Enriched KB
+================================================================
+shortcut
+
+cd /home/islamm9/ISWC/Client3/DistilBert+ComplEx
+
+# Step 1 — Train ComplEx KGE on each silo independently
+python train_kge_distilbert_complex.py
+
+# Step 2 — Federated QA training with DistilBERT encoder
+python train_fedv_distilbert_complex.py
+
+
+Project folder : /home/islamm9/ISWC/Client3/DistilBert+ComplEx/
+Dataset folder : /home/islamm9/ISWC/Dataset/Client3/data/
+  (unified shared dataset — no re-enrichment or re-splitting needed)
+
+
+================================================================
+KEY DIFFERENCES FROM OTHER EXPERIMENTS
+================================================================
+
+This is the 8th and final experiment, combining:
+  - ComplEx KGE: Hermitian dot product scoring in ℂᵈ
+  - DistilBERT:   lighter, faster QA encoder (6 layers, 66M params)
+
+Full 8-experiment matrix:
+
+  Experiment          | KGE    | Encoder    | Entity dim | Joint dim
+  ──────────────────────────────────────────────────────────────────
+  Bert+TransE         | TransE | BERT (110M)|  d = 256   | 3d = 768
+  Bert+DistMult       | DM     | BERT (110M)|  d = 256   | 3d = 768
+  Bert+RotatE         | RotatE | BERT (110M)| 2d = 512   | 6d = 1536
+  Bert+ComplEx        | CX     | BERT (110M)| 2d = 512   | 6d = 1536
+  DistilBert+TransE   | TransE | DB (66M)   |  d = 256   | 3d = 768
+  DistilBert+DistMult | DM     | DB (66M)   |  d = 256   | 3d = 768
+  DistilBert+RotatE   | RotatE | DB (66M)   | 2d = 512   | 6d = 1536
+  DistilBert+ComplEx  | CX     | DB (66M)   | 2d = 512   | 6d = 1536  ← THIS
+
+  DM=DistMult, DB=DistilBERT, CX=ComplEx
+
+ComplEx vs RotatE (same entity dim and joint dim):
+  - RotatE  : r_i = e^(iθ)  (unit modulus, rotation only)
+               φ(h,r,t) = −||h ∘ r − t||
+  - ComplEx : r ∈ ℂᵈ unconstrained
+               φ(h,r,t) = Re(<h, r, conj(t)>)
+                         = Σ h_re·r_re·t_re + h_re·r_im·t_im
+                             + h_im·r_re·t_im − h_im·r_im·t_re
+  - ComplEx handles anti-symmetric and asymmetric relations via both
+    real and imaginary parts of unconstrained relation embeddings
+  - ComplEx uses L2 weight_decay=1e-6 on KGE Adam (RotatE does not)
+  - ComplEx L2-normalises entity embeddings after each step (RotatE does not)
+
+ComplEx vs DistMult (same scoring family, different capacity):
+  - DistMult: φ = ⟨h,r,t⟩ (real bilinear) — symmetric only
+  - ComplEx:  φ = Re(⟨h,r,conj(t)⟩) (Hermitian bilinear) — handles asymmetry
+  - ComplEx subsumes DistMult: if imaginary parts → 0, ComplEx = DistMult
+
+
+================================================================
+PROJECT STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/Client3/data/                   ← shared, read-only
+│   ├── kb_enriched_owl.txt
+│   ├── silos/kb_silo_{a,b,c}.txt
+│   └── qa/2-hop/qa_{train,dev,test}.txt
+│
+└── Client3/DistilBert+ComplEx/
+    ├── HOW_TO_RUN_DISTILBERT_COMPLEX.txt
+    ├── config_distilbert_complex.py         ← all paths + hyperparams
+    ├── server_distilbert_complex.py         ← server with DistilBERT encoder
+    ├── evaluate_distilbert_complex.py       ← evaluation (MRR, Hits@k)
+    ├── complex_model.py                     ← copy from Bert+ComplEx
+    ├── dataset.py                           ← copy from Bert+TransE
+    ├── train_kge_distilbert_complex.py      ← run first  (Phase 1)
+    ├── train_fedv_distilbert_complex.py     ← run second (Phase 2)
+    ├── models/                              ← auto-created
+    │   ├── silo_a_complex.pt                  (N, 512) entity embeddings [re|im]
+    │   ├── silo_b_complex.pt
+    │   ├── silo_c_complex.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_distilbert_complex/             ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+FILES TO COPY FROM EXISTING EXPERIMENTS
+================================================================
+
+  # ComplEx model (from Bert+ComplEx)
+  cp /home/islamm9/ISWC/Client3/Bert+ComplEx/complex_model.py \
+     /home/islamm9/ISWC/Client3/DistilBert+ComplEx/
+
+  # Dataset utilities (from Bert+TransE — shared across all 8 experiments)
+  cp /home/islamm9/ISWC/Client3/Bert+TransE/src/dataset.py \
+     /home/islamm9/ISWC/Client3/DistilBert+ComplEx/
+
+Do NOT copy: server_complex.py, evaluate_complex.py, config_complex.py
+  (all replaced by the distilbert_complex variants in this folder)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/Client3/DistilBert+ComplEx
+
+# Step 1 — Train ComplEx KGE on each silo independently
+# DistilBERT is NOT involved — KGE training is encoder-agnostic.
+# Note: Adam uses weight_decay=1e-6 (standard for ComplEx, not used by others)
+# Expected: ~45-75 min on GPU
+CUDA_VISIBLE_DEVICES=1 python train_kge_distilbert_complex.py
+
+# Step 2 — Federated QA training with DistilBERT encoder
+# MLP maps 768 → 512 → 1536 (same as DistilBert+RotatE)
+# Expected: ~1.5-2.5 hours on GPU
+CUDA_VISIBLE_DEVICES=1 python train_fedv_distilbert_complex.py
+
+
+================================================================
+EMBEDDING DIMENSIONS AT A GLANCE
+================================================================
+
+  Component          | TransE/DM | RotatE/ComplEx
+  ─────────────────────────────────────────────────
+  KGE_EMBED_DIM      |    256    |   256  (complex dim)
+  Entity storage     |    256    |   512  (= 2 × 256, [re|im])
+  Relation storage   |    256    |   512  (= 2 × 256, [re|im])
+  h_A, h_B, h_C      |   (N,256) | (N,512)
+  h_joint            |   (N,768) | (N,1536)
+  DistilBERT [CLS]   |   (B,768) | (B,768)  (same)
+  MLP output q_embed |   (B,768) | (B,1536)
+  Gradient slice/silo|   (N,256) | (N,512)
+
+Note: RotatE relation dim = 256 (phase only); ComplEx relation dim = 512 [re|im]
+
+
+================================================================
+NORMALISATION DIFFERENCES ACROSS KGE MODELS
+================================================================
+
+  Model    | Entity L2-norm | Relation constraint | Weight decay
+  ────────────────────────────────────────────────────────────────
+  TransE   | Yes (after step)| None               | No
+  DistMult | Yes (after step)| None               | No
+  RotatE   | No             | Unit modulus (cos/sin)| No
+  ComplEx  | Yes (after step)| None               | 1e-6 (Adam)
+
+
