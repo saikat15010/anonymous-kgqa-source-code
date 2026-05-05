@@ -1,0 +1,93 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment  |  CLIENT 5
+  ComplEx + DistilBERT | 5 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client5/DistilBert+ComplEx
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — PQ2H tab-separated data loader (5-silo aware)
+  complex_model.py   — ComplEx KGE model (2d complex embeddings)
+  server.py          — 5-silo DistilBERT server (joint_dim = 10d = 2560)
+  evaluate.py        — evaluation (5-silo fuse, PQ2H answer types)
+  train_kge.py       — Step 1: train ComplEx on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_complex.pt
+    silo_b_complex.pt
+    silo_c_complex.pt
+    silo_d_complex.pt
+    silo_e_complex.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt
+    kge_train_log.json
+    fedv_train_log.txt
+    fedv_train_log.json
+
+
+================================================================
+SILO RELATION SPLIT (Client5)
+================================================================
+
+  Silo A — Family       : parents, children, spouse
+  Silo B — Demographics : gender, nationality
+  Silo C — Identity     : ethnicity, religion, cause_of_death
+  Silo D — Occupation   : profession, institution
+  Silo E — Places       : place_of_birth, place_of_death, location
+
+
+================================================================
+DIMENSION SUMMARY FOR ALL Client5 DistilBERT EXPERIMENTS
+================================================================
+
+  Model                | Entity dim | Joint dim  | Encoder      | KGE optim
+  ──────────────────────────────────────────────────────────────────────────
+  DistilBert+TransE    |   d = 256  |  5d = 1280 | DistilBERT   | Adam
+  DistilBert+DistMult  |   d = 256  |  5d = 1280 | DistilBERT   | Adam
+  DistilBert+RotatE    |  2d = 512  | 10d = 2560 | DistilBERT   | Adam
+  DistilBert+ComplEx   |  2d = 512  | 10d = 2560 | DistilBERT   | Adam (wd=1e-6)
+
+ComplEx is the only model with weight_decay=1e-6 in train_kge.py.
+The QA-phase optimizers in train_fedv.py use no weight decay.
+
+ComplEx vs RotatE (both joint_dim = 10d = 2560):
+  - RotatE   : phase-angle relations, geometric inductive bias
+  - ComplEx  : unconstrained 2d complex relations, handles all
+               relation patterns via Re(<h, r, conj(t)>)
+  - Silo A contains spouse (symmetric) + parents<->children
+    (anti-symmetric): ComplEx handles both simultaneously.
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client5/DistilBert+ComplEx
+
+# Step 1: Train ComplEx on each of the 5 silos
+# (DistilBERT not involved in KGE training)
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+# Step 2: Federated QA training with DistilBERT encoder
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
