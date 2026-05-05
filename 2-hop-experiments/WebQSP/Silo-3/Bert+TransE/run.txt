@@ -1,0 +1,132 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 3
+  BERT + TransE | 3 Silos | 1-2 hop | Freebase
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client3/Bert+TransE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (3-silo aware)
+  transe_model.py    — TransE KGE model (d-dimensional real embeddings)
+  server.py          — 3-silo BERT server (joint_dim = 3d = 768)
+  evaluate.py        — evaluation (3-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train TransE on all 3 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+DATASET PATHS (unified, shared with all WebQSP experiments)
+================================================================
+
+  KB Silos:
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/silos/kb_silo_a.txt
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/silos/kb_silo_b.txt
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/silos/kb_silo_c.txt
+
+  QA Files:
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/qa/qa_train.txt
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/qa/qa_dev.txt
+    /home/islamm9/ISWC/Dataset/WebQSP/data/Client3/qa/qa_test.txt
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_transe.pt           (Silo A checkpoint)
+    silo_b_transe.pt           (Silo B checkpoint)
+    silo_c_transe.pt           (Silo C checkpoint)
+    shared_entity2id.json      (shared entity vocabulary)
+    fedv_best.pt               (best QA model)
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+3-SILO RELATION SPLIT (Client3)
+================================================================
+
+  Silo A — People, Medicine & Biology
+    people.*, biology.*, medicine.*, celebrities.*,
+    fictional_universe.*
+    e.g. people.person.nationality, people.person.profession
+
+  Silo B — Places & Organisations
+    location.*, geography.*, organization.*, government.*,
+    education.*, business.*, finance.*, architecture.*,
+    transportation.*, military.*, law.*, cvg.*
+    e.g. location.location.containedby, organization.organization.founders
+
+  Silo C — Arts, Sports & Entertainment  (catch-all)
+    film.*, tv.*, music.*, sports.*, book.*, award.*, olympics.*, etc.
+    e.g. film.actor.film, award.award_nominee.award_nominations
+
+
+================================================================
+KEY DIMENSIONS
+================================================================
+
+  KGE model      : TransE  (d-dimensional REAL embeddings)
+  entity_dim     : d = 256
+  joint_dim      : 3 × d = 3 × 256 = 768
+  BERT output    : 768-dim  (same as joint_dim — no dimension mismatch)
+  MLP            : 768 → 512 → 768
+
+  Candidate caps (larger than MetaQA/PQ2H due to WebQSP scale):
+    MAX_NEIGHBORS      = 200  (was 100)
+    CANDIDATE_HOP1_CAP = 100  (was 50)
+    CANDIDATE_HOP2_CAP = 30   (was 20)
+
+
+================================================================
+COMPARISON WITH PQ2H CLIENT3 BERT+TransE
+================================================================
+
+  Parameter          PQ2H Client3       WebQSP Client3
+  ─────────────────────────────────────────────────────
+  Num silos          3                  3
+  Relations          13                 3,229
+  Entities           ~11K               ~985K
+  Triples            ~60K               ~2.78M
+  entity_dim         256                256
+  joint_dim          768                768
+  MAX_NEIGHBORS      100                200
+  HOP1_CAP           50                 100
+  HOP2_CAP           20                 30
+  All other HPs      identical          identical
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client3/Bert+TransE
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT3 EXPERIMENT MATRIX
+================================================================
+
+  Encoder    | TransE | DistMult | RotatE | ComplEx
+  ─────────────────────────────────────────────────
+  BERT       |  THIS  |         |        |
+  DistilBERT |        |         |        |
+  RoBERTa    |        |         |        |
+
+================================================================
