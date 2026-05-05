@@ -1,0 +1,134 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment
+  TransE + RoBERTa | 3 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client3/RoBERTa+TransE
+python train_kge_roberta_transe.py
+python train_fedv_roberta_transe.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client3/              ← shared, read-only
+│   ├── silos/
+│   │   ├── kb_silo_a.txt                   ← Family    (children, parents, spouse)
+│   │   ├── kb_silo_b.txt                   ← Identity  (gender, nationality, ...)
+│   │   └── kb_silo_c.txt                   ← Biog.     (place_of_birth, ...)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client3/RoBERTa+TransE/            ← this project
+    ├── HOW_TO_RUN_PQ2H_ROBERTA_TRANSE.txt
+    ├── config_roberta_transe.py             ← all paths + hyperparams
+    ├── dataset.py                           ← PQ2H data loader (copy from Bert+TransE)
+    ├── transe_model.py                      ← TransE KGE (copy from Bert+TransE)
+    ├── server_roberta_transe.py             ← server with RoBERTa encoder
+    ├── evaluate_roberta_transe.py           ← evaluation (PQ2H answer types)
+    ├── train_kge_roberta_transe.py          ← run first
+    ├── train_fedv_roberta_transe.py         ← run second
+    ├── models/                              ← auto-created
+    │   ├── silo_a_transe.pt
+    │   ├── silo_b_transe.pt
+    │   ├── silo_c_transe.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_roberta_transe/                 ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+KEY DIFFERENCE FROM OTHER PQ2H EXPERIMENTS
+================================================================
+
+Only the QA encoder changes. TransE KGE is identical to all
+TransE-series experiments.
+
+  Encoder comparison (all use same TransE KGE, same h_joint=768):
+
+  Experiment          | Encoder           | Params | Layers | Joint dim
+  ────────────────────────────────────────────────────────────────────
+  Bert+TransE         | bert-base-uncased |  110M  |   12   | 3d = 768
+  DistilBert+TransE   | distilbert-base   |   66M  |    6   | 3d = 768
+  RoBERTa+TransE      | roberta-base      |  125M  |   12   | 3d = 768  ← THIS
+
+RoBERTa vs BERT-base (same depth, better pre-training):
+  - 12 transformer layers, 768-dim output  (identical architecture)
+  - ~125M parameters  (vs BERT's ~110M — extra from larger BPE vocab)
+  - Trained on 160GB text  (BERT: 16GB)
+  - Larger batches (8K), dynamic masking, no NSP objective
+  - Byte-Pair Encoding (BPE) tokenizer — no token_type_ids
+  - <s> token serves as [CLS] equivalent
+  - Typically outperforms BERT-base on NLU benchmarks
+
+RoBERTa tokenizer note:
+  - No [CLS]/[SEP] tokens — uses <s>/</s>
+  - No token_type_ids (handled transparently by transformers library)
+  - out.last_hidden_state[:, 0, :] gives the <s> representation
+
+
+================================================================
+FILES AND THEIR SOURCES
+================================================================
+
+  config_roberta_transe.py     ← new (BERT_MODEL=roberta-base, PQ2H paths)
+  server_roberta_transe.py     ← new (RobertaTokenizer + RobertaModel)
+  evaluate_roberta_transe.py   ← new (PQ2H answer types, config_roberta_transe)
+  train_kge_roberta_transe.py  ← new (logs to logs_roberta_transe/)
+  train_fedv_roberta_transe.py ← new (RoBERTa server + evaluate imports)
+  dataset.py                   ← copy from Bert+TransE (PQ2H) — tab-sep KB
+  transe_model.py              ← copy from Bert+TransE (PQ2H) — unchanged
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client3/RoBERTa+TransE
+
+# Step 1 — Train TransE KGE on each silo
+# RoBERTa is NOT involved here — KGE training is encoder-agnostic.
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_transe.py
+
+  Reads  : Dataset/PQ2H/data/Client3/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_transe.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs_roberta_transe/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training with RoBERTa encoder
+# RoBERTa (125M) is slightly slower per batch than BERT-base (110M)
+# and notably slower than DistilBERT (66M).
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_transe.py
+
+  Reads  : models/silo_{a,b,c}_transe.pt
+           Dataset/PQ2H/data/Client3/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs_roberta_transe/run_<timestamp>/fedv_train_log.{txt,json}
+
+
+================================================================
+EMBEDDING DIMENSIONS (all identical to Bert+TransE PQ2H)
+================================================================
+
+  Component          | This experiment  | Bert+TransE (PQ2H)
+  ──────────────────────────────────────────────────────────
+  KGE_EMBED_DIM      |    256           |   256   (same)
+  h_A, h_B, h_C      |   (N,256)        | (N,256) (same)
+  h_joint            |   (N,768)        | (N,768) (same)
+  Encoder output     |   (B,768)        | (B,768) (same)
+  MLP output q_embed |   (B,768)        | (B,768) (same)
+
+
