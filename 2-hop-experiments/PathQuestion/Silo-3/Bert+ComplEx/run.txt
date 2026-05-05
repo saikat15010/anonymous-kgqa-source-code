@@ -1,0 +1,115 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment
+  ComplEx + BERT | 3 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client3/Bert+ComplEx
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client3/          ← shared, read-only
+│   ├── silos/
+│   │   ├── kb_silo_a.txt               ← Family    (children, parents, spouse)
+│   │   ├── kb_silo_b.txt               ← Identity  (gender, nationality, ...)
+│   │   └── kb_silo_c.txt               ← Biog.     (place_of_birth, institution, ...)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client3/Bert+ComplEx/          ← this project
+    ├── HOW_TO_RUN_PQ2H_COMPLEX.txt
+    ├── config.py                        ← all paths + hyperparams
+    ├── dataset.py                       ← PQ2H data loader (copy from Bert+TransE)
+    ├── complex_model.py                 ← ComplEx KGE model
+    ├── server.py                        ← federated server (6d joint dim)
+    ├── evaluate.py                      ← evaluation (PQ2H answer types)
+    ├── train_kge.py                     ← run first
+    ├── train_fedv.py                    ← run second
+    ├── models/                          ← auto-created
+    │   ├── silo_a_complex.pt
+    │   ├── silo_b_complex.pt
+    │   ├── silo_c_complex.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs/                            ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+KEY DIFFERENCE FROM OTHER MODELS (PQ2H)
+================================================================
+
+ComplEx uses Hermitian dot product scoring in complex space:
+  phi(h, r, t) = Re(<h, r, conj(t)>)
+
+Like RotatE, entity embeddings are 2d-dimensional (complex).
+Unlike RotatE, relation embeddings are also 2d (not just phases).
+This gives ComplEx more expressive power — no unit-modulus
+constraint on relations, allowing arbitrary complex rotations
+AND scalings.
+
+  Model     | Entity dim | Rel dim | Joint dim | Scoring
+  ──────────────────────────────────────────────────────────
+  TransE    |   d = 256  |    d    |  3d = 768 | -||h+r-t||
+  DistMult  |   d = 256  |    d    |  3d = 768 | <h,r,t>
+  RotatE    |  2d = 512  |    d    | 6d = 1536 | -||h∘r-t||
+  ComplEx   |  2d = 512  |   2d   | 6d = 1536 | Re(<h,r,conj(t)>)
+
+ComplEx also uses L2 weight decay (1e-6) in the KGE optimizer —
+standard practice for ComplEx training.
+
+Why ComplEx may excel on PQ2H:
+  Silo A contains parents↔children (inverse/anti-symmetric) and
+  spouse (symmetric). ComplEx handles ALL these patterns via the
+  imaginary part asymmetry: phi(h,r,t) ≠ phi(t,r,h) in general.
+
+Files that changed vs Bert+TransE (PQ2H):
+  config.py         — CHECKPOINT_DIR updated
+  complex_model.py  — new (replaces transe_model.py)
+  server.py         — new (6d output; same as RotatE server)
+  evaluate.py       — new (imports from local config)
+  train_kge.py      — ComplEx imports, weight_decay=1e-6, *_complex.pt
+  train_fedv.py     — ComplEx imports + checkpoint names
+
+File copied unchanged:
+  dataset.py        — no model-specific logic
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client3/Bert+ComplEx
+
+# Step 1 — Train ComplEx KGE on each silo
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+
+  Reads  : Dataset/PQ2H/data/Client3/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_complex.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+  Reads  : models/silo_{a,b,c}_complex.pt
+           Dataset/PQ2H/data/Client3/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs/run_<timestamp>/fedv_train_log.{txt,json}
+
+
