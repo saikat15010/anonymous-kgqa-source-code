@@ -1,0 +1,5 @@
+cd /home/islamm9/ISWC/Client5/DistilBert+TransE
+
+CUDA_VISIBLE_DEVICES=0 python train_kge_distilbert_transe.py
+
+CUDA_VISIBLE_DEVICES=0 python train_fedv_distilbert_transe.py
