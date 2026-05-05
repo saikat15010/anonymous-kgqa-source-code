@@ -1,0 +1,118 @@
+================================================================
+  FedV-KGQA — PQ2H Experiment
+  DistMult + RoBERTa | 3 Silos | 2-hop | Freebase13-Enriched KB
+================================================================
+
+Shortcut
+
+cd /home/islamm9/ISWC/PQ2H/Client3/RoBERTa+DistMult
+python train_kge_roberta_distmult.py
+python train_fedv_roberta_distmult.py
+
+
+================================================================
+DIRECTORY STRUCTURE
+================================================================
+
+/home/islamm9/ISWC/
+├── Dataset/PQ2H/data/Client3/              ← shared, read-only
+│   ├── silos/
+│   │   ├── kb_silo_a.txt                   ← Family    (children, parents, spouse)
+│   │   ├── kb_silo_b.txt                   ← Identity  (gender, nationality, ...)
+│   │   └── kb_silo_c.txt                   ← Biog.     (place_of_birth, ...)
+│   └── qa/2-hop/
+│       ├── qa_train.txt
+│       ├── qa_dev.txt
+│       └── qa_test.txt
+│
+└── PQ2H/Client3/RoBERTa+DistMult/          ← this project
+    ├── HOW_TO_RUN_PQ2H_ROBERTA_DISTMULT.txt
+    ├── config_roberta_distmult.py           ← all paths + hyperparams
+    ├── dataset.py                           ← PQ2H data loader (copy from Bert+TransE)
+    ├── distmult_model.py                    ← DistMult KGE (copy from Bert+DistMult)
+    ├── server_roberta_distmult.py           ← server with RoBERTa encoder (3d)
+    ├── evaluate_roberta_distmult.py         ← evaluation (PQ2H answer types)
+    ├── train_kge_roberta_distmult.py        ← run first
+    ├── train_fedv_roberta_distmult.py       ← run second
+    ├── models/                              ← auto-created
+    │   ├── silo_a_distmult.pt
+    │   ├── silo_b_distmult.pt
+    │   ├── silo_c_distmult.pt
+    │   ├── shared_entity2id.json
+    │   ├── fedv_best.pt
+    │   └── current_run_id.txt
+    └── logs_roberta_distmult/               ← auto-created
+        └── run_YYYYMMDD_HHMMSS/
+            ├── kge_train_log.txt
+            ├── kge_train_log.json
+            ├── fedv_train_log.txt
+            └── fedv_train_log.json
+
+
+================================================================
+WHAT CHANGED VS OTHER PQ2H EXPERIMENTS
+================================================================
+
+This experiment combines DistMult (KGE) + RoBERTa (encoder).
+
+Compared to RoBERTa+TransE:   only the KGE model changes.
+Compared to Bert+DistMult:    only the QA encoder changes.
+Compared to DistilBert+DistMult: encoder changes (RoBERTa vs DistilBERT).
+
+  Component      | Bert+DistMult        | RoBERTa+DistMult
+  ─────────────────────────────────────────────────────────
+  KGE model      | DistMult             | DistMult  (same)
+  KGE scoring    | <h,r,t>              | <h,r,t>   (same)
+  Encoder        | bert-base-uncased    | roberta-base
+  Encoder params | ~110M                | ~125M
+  Encoder output | 768-dim              | 768-dim   (same)
+  h_joint dim    | 3d = 768             | 3d = 768  (same)
+  All other HP   | identical            | identical
+
+  Component      | RoBERTa+TransE       | RoBERTa+DistMult
+  ─────────────────────────────────────────────────────────
+  KGE model      | TransE               | DistMult
+  KGE scoring    | -||h+r-t||           | <h,r,t>
+  Entity dim     | d = 256              | d = 256   (same)
+  Joint dim      | 3d = 768             | 3d = 768  (same)
+  Encoder        | roberta-base         | roberta-base (same)
+  All other HP   | identical            | identical
+
+
+================================================================
+FILES AND THEIR SOURCES
+================================================================
+
+  config_roberta_distmult.py      ← new (CHECKPOINT_DIR updated)
+  distmult_model.py               ← copy from Bert+DistMult (PQ2H)
+  server_roberta_distmult.py      ← new (imports config_roberta_distmult)
+  evaluate_roberta_distmult.py    ← new (imports config_roberta_distmult)
+  train_kge_roberta_distmult.py   ← new (DistMult + *_distmult.pt)
+  train_fedv_roberta_distmult.py  ← new (DistMult imports + checkpoint names)
+  dataset.py                      ← copy from Bert+TransE (PQ2H)
+
+
+================================================================
+RUN ORDER
+================================================================
+
+cd /home/islamm9/ISWC/PQ2H/Client3/RoBERTa+DistMult
+
+# Step 1 — Train DistMult KGE on each silo
+CUDA_VISIBLE_DEVICES=1 python train_kge_roberta_distmult.py
+
+  Reads  : Dataset/PQ2H/data/Client3/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_{a,b,c}_distmult.pt
+           models/shared_entity2id.json
+           models/current_run_id.txt
+           logs_roberta_distmult/run_<timestamp>/kge_train_log.{txt,json}
+
+# Step 2 — Federated QA training with RoBERTa
+CUDA_VISIBLE_DEVICES=1 python train_fedv_roberta_distmult.py
+
+  Reads  : models/silo_{a,b,c}_distmult.pt
+           Dataset/PQ2H/data/Client3/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt
+           logs_roberta_distmult/run_<timestamp>/fedv_train_log.{txt,json}
+
+
