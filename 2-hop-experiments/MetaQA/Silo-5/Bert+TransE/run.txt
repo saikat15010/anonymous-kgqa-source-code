@@ -1,0 +1,7 @@
+# Run Phase 1 then Phase 2
+
+cd /home/islamm9/ISWC/Client5/Bert+TransE
+
+CUDA_VISIBLE_DEVICES=0 python train_kge.py
+
+CUDA_VISIBLE_DEVICES=0 python train_fedv.py
