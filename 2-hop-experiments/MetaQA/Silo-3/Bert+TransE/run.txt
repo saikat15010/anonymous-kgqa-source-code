@@ -1,0 +1,224 @@
+================================================================
+  FedV-KGQA — HOW TO RUN
+  TransE + BERT | 3 Silos | 2-hop | OWL-Enriched KB
+================================================================
+
+Shortcut
+
+cd src
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+DIRECTORY STRUCTURE  (set up exactly like this)
+================================================================
+
+project/
+├── data/
+│   ├── kb.txt                        ← original MetaQA KB
+│   ├── kb_enriched_owl.txt           ← created by Step 2
+│   ├── tbox.txt                      ← created by Step 2
+│   ├── entailment_report.txt         ← created by Step 2
+│   ├── silos/
+│   │   ├── kb_silo_a.txt             ← created by Step 3
+│   │   ├── kb_silo_b.txt             ← created by Step 3
+│   │   ├── kb_silo_c.txt             ← created by Step 3
+│   │   └── split_verification.txt   ← created by Step 3
+│   └── qa/
+│       └── 2-hop/
+│           ├── qa_train.txt
+│           ├── qa_dev.txt
+│           └── qa_test.txt
+├── models/                           ← checkpoints saved here automatically
+├── src/
+│   ├── config.py
+│   ├── dataset.py
+│   ├── transe_model.py
+│   ├── server.py
+│   ├── train_kge.py
+│   ├── train_fedv.py
+│   └── evaluate.py
+├── ontology_enrich_kb.py
+└── split_kb.py
+
+
+================================================================
+STEP 1 — INSTALL DEPENDENCIES
+================================================================
+
+pip install torch torchvision
+pip install transformers
+pip install sentencepiece
+
+
+================================================================
+STEP 2 — OWL ENRICHMENT  (run from project root)
+================================================================
+
+python ontology_enrich_kb.py
+
+  Reads  : data/kb.txt
+  Writes : data/kb_enriched_owl.txt   (405k triples)
+           data/tbox.txt              (T-Box declarations)
+           data/entailment_report.txt (stats + Yuriy Norshteyn example)
+
+  What it does:
+    Layer 1 — owl:inverseOf
+      directed_by  →  entails  directed      (persons become Silo A heads)
+      written_by   →  entails  wrote         (persons become Silo A heads)
+
+    Layer 2 — owl:propertyChainAxiom
+      (directed  ∘ starred_actors) → associated_actor    (Silo B)
+      (wrote     ∘ starred_actors) → associated_actor    (Silo B)
+      (directed  ∘ has_genre)      → associated_genre    (Silo C)
+      (wrote     ∘ has_genre)      → associated_genre    (Silo C)
+      (directed  ∘ release_year)   → associated_year     (Silo C)
+      (wrote     ∘ release_year)   → associated_year     (Silo C)
+      (directed  ∘ in_language)    → associated_language (Silo C)
+      (wrote     ∘ in_language)    → associated_language (Silo C)
+      + actor co-star chains       → associated_actor    (Silo B)
+      + actor genre/year/language chains                 (Silo C)
+
+  Why needed:
+    Original KB has only movies as head entities.
+    Person entities (directors, actors, writers) only appear as tails
+    → they get weak embeddings → QA fails for person-topic questions.
+    OWL entailment gives every person head-entity triples in all 3 silos.
+
+
+================================================================
+STEP 3 — VERTICAL SPLIT  (run from project root)
+================================================================
+
+python split_kb.py
+
+  Reads  : data/kb_enriched_owl.txt
+  Writes : data/silos/kb_silo_a.txt   (~62k triples)
+           data/silos/kb_silo_b.txt   (~129k triples)
+           data/silos/kb_silo_c.txt   (~84k triples)
+           data/silos/split_verification.txt
+
+  Silo assignment by relation type:
+    Silo A (Creators)  : directed_by, written_by, directed, wrote
+    Silo B (Cast+Tags) : starred_actors, has_tags, associated_actor
+    Silo C (Metadata)  : release_year, in_language, has_genre,
+                         has_imdb_rating, has_imdb_votes,
+                         associated_genre, associated_year,
+                         associated_language
+
+  VFL requirement:
+    Shared entity set = UNION across all 3 silos.
+    (Union ensures all answer candidates are rankable,
+     even if a silo has no triples for that entity.)
+
+  Verify the split:
+    cat data/silos/split_verification.txt
+
+
+================================================================
+STEP 4 — TRAIN KGE MODELS  (run from src/)
+================================================================
+
+cd src
+python train_kge.py
+
+  Reads  : data/silos/kb_silo_{a,b,c}.txt
+  Writes : models/silo_a_transe.pt
+           models/silo_b_transe.pt
+           models/silo_c_transe.pt
+           models/shared_entity2id.json
+
+  What it does:
+    - Builds shared entity vocabulary (union of all 3 silos)
+    - Trains TransE independently on each silo (100 epochs)
+    - Saves entity + relation embeddings per silo
+    - Relation embeddings stay in the checkpoint (simulate staying in silo)
+    - Only ent_embed.weight is used by server in Step 5
+
+  Key config (config.py):
+    KGE_EMBED_DIM   = 256     embedding size d  (h_joint will be 3d=768)
+    KGE_EPOCHS      = 100
+    KGE_LR          = 1e-3
+    KGE_BATCH_SIZE  = 512
+    KGE_NEG_SAMPLES = 10      negatives per positive triple
+    KGE_MARGIN      = 1.0
+
+  Expected runtime: ~10-30 min per silo on GPU
+  Watch for: loss should decrease smoothly and plateau
+
+  To swap KGE model (DistMult / ComplEx / RotatE):
+    1. Implement in src/  with same interface as transe_model.py:
+         self.ent_embed           (nn.Embedding)
+         self.rel_embed           (nn.Embedding, never sent to server)
+         get_entity_embeddings()
+         margin_ranking_loss()
+    2. Replace import in train_kge.py and train_fedv.py
+    3. Re-run Steps 4 and 5
+
+
+================================================================
+STEP 5 — FEDERATED QA TRAINING  (run from src/)
+================================================================
+
+python train_fedv.py
+
+  Reads  : models/silo_{a,b,c}_transe.pt
+           models/shared_entity2id.json
+           data/qa/2-hop/qa_{train,dev,test}.txt
+  Writes : models/fedv_best.pt   (best dev Hits@1 checkpoint)
+
+  What it does:
+    1. Loads pretrained TransE checkpoints (Phase 1 KGE complete)
+    2. Builds bidirectional 2-hop neighbor index for candidate filtering
+    3. Precomputes candidate sets for all entities once (saves training time)
+    4. Federation loop per batch:
+         a. Each silo sends ent_embed.weight to server
+         b. Server concatenates: h_joint = [h_A || h_B || h_C]  (N, 3d)
+         c. BERT (frozen) + MLP encodes question → q_embed (B, 3d)
+         d. Topic anchoring: q_final = q_embed + h_joint[topic_id]
+         e. Cosine similarity against precomputed candidates
+         f. Margin ranking loss (hardest negative mining)
+         g. loss.backward() → gradients auto-split at concat boundary
+         h. Each silo updates only its own ent_embed slice
+    5. Evaluates on dev every 2 epochs → saves best model
+    6. Final test evaluation with per-type metric breakdown
+
+  Key config (config.py):
+    QA_EPOCHS           = 30
+    QA_LR               = 1e-4
+    QA_BATCH_SIZE       = 64
+    QA_MARGIN           = 1.0
+    USE_TOPIC_ANCHORING = True     set False for ablation experiment
+    CANDIDATE_HOP1_CAP  = 50      increase if answer recall is low
+    CANDIDATE_HOP2_CAP  = 20      increase if answer recall is low
+
+  Expected runtime: ~1-3 hours on GPU
+
+
+================================================================
+STEP 6 — OUTPUT METRICS
+================================================================
+
+  Overall metrics reported:
+    MRR | Hits@1 | Hits@3 | Hits@5 | Hits@10
+
+  Per answer-type breakdown (new in evaluate.py):
+    [person   ]  MRR: x.xxxx | Hits@1: x.xxxx | ... | N: 48172
+    [movie    ]  MRR: x.xxxx | Hits@1: x.xxxx | ... | N: 25522
+    [year     ]  MRR: x.xxxx | Hits@1: x.xxxx | ... | N: 19304
+    [genre    ]  MRR: x.xxxx | Hits@1: x.xxxx | ... | N: 17199
+    [language ]  MRR: x.xxxx | Hits@1: x.xxxx | ... | N:  6004
+
+  Interpreting per-type results:
+    - person/movie low  → KGE embeddings weak, try ComplEx or RotatE
+    - year/language low → candidate filtering too narrow (increase caps)
+                          or type-constrained filtering needed
+    - genre low         → associated_genre chain may need more triples
+
+
+
+
+
+
+
