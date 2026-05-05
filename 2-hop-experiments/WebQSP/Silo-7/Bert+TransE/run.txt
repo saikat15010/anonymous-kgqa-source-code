@@ -1,0 +1,102 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 7
+  BERT + TransE | 7 Silos | 1-2 hop | Freebase | OWL-enriched KB
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client7/Bert+TransE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (7-silo aware)
+  transe_model.py    — TransE KGE model (d-dim real, translation scoring)
+  server.py          — 7-silo BERT server (joint_dim = 7d = 1792)
+  evaluate.py        — evaluation (7-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train TransE on all 7 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+CLIENT7 vs CLIENT5 vs CLIENT3 — KEY DIFFERENCES
+================================================================
+
+  Property              Client3     Client5     Client7
+  ─────────────────────────────────────────────────────────────
+  Number of silos       3           5           7
+  Silo labels           A,B,C       A-E         A-G
+  joint_dim (TransE)    768         1280        1792
+  MLP output            768         1280        1792
+  KB paths              SILO_A/B/C  SILO_A-E    SILO_A-G
+  Models trained        3           5           7
+  DATA_DIR              .../Client3 .../Client5 .../Client7
+
+
+================================================================
+7-SILO LAYOUT
+================================================================
+
+  Silo A — People
+  Silo B — Medicine & Science
+  Silo C — Places
+  Silo D — Government, Law & Military
+  Silo E — Organisations, Business & Education
+  Silo F — Film & TV
+  Silo G — Music, Sports & Books
+
+
+================================================================
+KEY DIMENSIONS
+================================================================
+
+  entity_dim  = d   = 256
+  joint_dim   = 7d  = 1792      ← 7 silos × 256
+  MLP         : 768 → 512 → 1792
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_transe.pt
+    silo_b_transe.pt
+    silo_c_transe.pt
+    silo_d_transe.pt
+    silo_e_transe.pt
+    silo_f_transe.pt
+    silo_g_transe.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client7/Bert+TransE
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT7 BERT EXPERIMENT MATRIX
+================================================================
+
+  Encoder | TransE | DistMult | RotatE | ComplEx
+  ─────────────────────────────────────────────────
+  BERT    |  THIS  |          |        |
+
+================================================================
