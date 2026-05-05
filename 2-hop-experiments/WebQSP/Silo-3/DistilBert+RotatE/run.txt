@@ -1,0 +1,105 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 3
+  DistilBERT + RotatE | 3 Silos | 1-2 hop | Freebase | OWL-enriched KB
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client3/DistilBert+RotatE
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (3-silo aware)
+  rotate_model.py    — RotatE KGE model (2d complex, phase-rotation scoring)
+  server.py          — 3-silo DistilBERT server (joint_dim = 3*2d = 1536)
+  evaluate.py        — evaluation (3-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train RotatE on all 3 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+KEY DIMENSIONS
+================================================================
+
+  KGE_EMBED_DIM  = d   = 256  (complex dimension)
+  entity_dim     = 2d  = 512
+  relation_dim   = d   = 256  (phase angles — unlike ComplEx's 2d)
+  joint_dim      = 3 × 2d = 1536
+
+  MLP: 768 → 512 → 1536
+
+
+================================================================
+DISTILBERT vs BERT — KEY DIFFERENCES
+================================================================
+
+  Property              BERT                 DistilBERT
+  ─────────────────────────────────────────────────────────────
+  Model                 bert-base-uncased    distilbert-base-uncased
+  Transformer layers    12                   6
+  Parameters            ~110M                ~66M
+  Hidden size           768                  768  (same)
+  token_type_ids        YES                  NO  ← critical
+  Output dim            768                  768  (same)
+  joint_dim (RotatE)    1536                 1536  (same)
+  MLP                   768→512→1536         768→512→1536  (same)
+  QA_EPOCHS             50                   100
+
+
+================================================================
+ROTATE vs OTHER KGE MODELS
+================================================================
+
+  Property        TransE    DistMult  RotatE    ComplEx
+  ──────────────────────────────────────────────────────────────
+  entity_dim      256       256       512       512
+  joint_dim       768       768       1536      1536
+  L2 norm         YES       NO        YES       YES
+  Weight decay    No        No        No        1e-6(KGE)
+  Checkpoint      *_transe  *_distmult *_rotate *_complex
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_rotate.pt
+    silo_b_rotate.pt
+    silo_c_rotate.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client3/DistilBert+RotatE
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT3 EXPERIMENT MATRIX
+================================================================
+
+  Encoder    | TransE | DistMult | RotatE  | ComplEx
+  ─────────────────────────────────────────────────
+  BERT       |  DONE  |  DONE    |  DONE   |  DONE
+  DistilBERT |  DONE  |  DONE    |  THIS ✓ |
+  RoBERTa    |        |          |         |
+
+================================================================
