@@ -1,0 +1,103 @@
+================================================================
+  FedV-KGQA — WebQSP Experiment  |  CLIENT 5
+  BERT + ComplEx | 5 Silos | 1-2 hop | Freebase | OWL-enriched KB
+================================================================
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/WebQSP/Client5/Bert+ComplEx
+python train_kge.py
+python train_fedv.py
+
+
+================================================================
+FILES IN THIS FOLDER
+================================================================
+
+  config.py          — all paths + hyperparameters
+  dataset.py         — WebQSP tab-separated data loader (5-silo aware)
+  complex_model.py   — ComplEx KGE model (2d complex, Hermitian dot product)
+  server.py          — 5-silo BERT server (joint_dim = 5*2d = 2560)
+  evaluate.py        — evaluation (5-silo fuse, WebQSP answer types)
+  train_kge.py       — Step 1: train ComplEx on all 5 silos
+  train_fedv.py      — Step 2: federated QA training
+
+
+================================================================
+KEY DIMENSIONS
+================================================================
+
+  KGE_EMBED_DIM  = d    = 256   (complex dimension)
+  entity_dim     = 2d   = 512
+  relation_dim   = 2d   = 512   (complex — unlike RotatE's d phase angles)
+  joint_dim      = 5×2d = 2560     ← 5 silos × 512
+
+  MLP: 768 → 512 → 2560
+
+
+================================================================
+COMPLEX vs ROTATE (both entity_dim=512, joint_dim=2560 in Client5)
+================================================================
+
+  Property           RotatE               ComplEx
+  ─────────────────────────────────────────────────────────────
+  relation_dim       d=256 (phase angles)  2d=512 (complex)
+  Scoring            -||h∘e^ir - t||       Re(<h,r,conj(t)>)
+  L2 norm            YES                   YES  (same)
+  KGE weight decay   No                    1e-6 (KGE-phase only)
+  QA weight decay    No                    No   (same)
+  Checkpoint names   silo_*_rotate.pt      silo_*_complex.pt
+
+
+================================================================
+CLIENT5 DIMENSION SUMMARY (all 4 KGE models)
+================================================================
+
+  KGE       entity_dim  joint_dim (5 silos)
+  ─────────────────────────────────────────
+  TransE    256         5 × 256  = 1280
+  DistMult  256         5 × 256  = 1280
+  RotatE    512         5 × 512  = 2560
+  ComplEx   512         5 × 512  = 2560  ← this experiment
+
+
+================================================================
+EXPECTED OUTPUT PATHS
+================================================================
+
+  models/
+    silo_a_complex.pt
+    silo_b_complex.pt
+    silo_c_complex.pt
+    silo_d_complex.pt
+    silo_e_complex.pt
+    shared_entity2id.json
+    fedv_best.pt
+    current_run_id.txt
+
+  logs/run_YYYYMMDD_HHMMSS/
+    kge_train_log.txt / .json
+    fedv_train_log.txt / .json
+
+
+================================================================
+RUN COMMANDS
+================================================================
+
+cd /home/islamm9/ISWC/WebQSP/Client5/Bert+ComplEx
+
+CUDA_VISIBLE_DEVICES=1 python train_kge.py
+CUDA_VISIBLE_DEVICES=1 python train_fedv.py
+
+
+================================================================
+WEBQSP CLIENT5 BERT EXPERIMENT MATRIX — ALL COMPLETE
+================================================================
+
+  Encoder | TransE | DistMult | RotatE | ComplEx
+  ─────────────────────────────────────────────────
+  BERT    |  DONE  |  DONE    |  DONE  |  THIS ✓
+
+  All 4 WebQSP Client5 BERT experiments now complete!
+
+================================================================
