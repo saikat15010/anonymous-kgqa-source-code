@@ -1,0 +1,3 @@
+cd /home/islamm9/ISWC/Client7/DistilBert+DistMult
+CUDA_VISIBLE_DEVICES=0 python train_kge_distilbert_distmult.py
+CUDA_VISIBLE_DEVICES=0 python train_fedv_distilbert_distmult.py
