@@ -1,0 +1,2 @@
+cd /home/islamm9/ISWC/3-hop/MetaQA/RoBERTa+TransE
+python train_fedv_roberta_transe.py
