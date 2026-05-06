@@ -1,0 +1,3 @@
+cd /home/islamm9/ISWC/Baselines/2_FL_KG_QA/MetaQA/src && python train_fedv.py
+cd /home/islamm9/ISWC/Baselines/2_FL_KG_QA/PQ2H && python train_fedv.py
+cd /home/islamm9/ISWC/Baselines/2_FL_KG_QA/WebQSP && python train_fedv.py
