@@ -1,0 +1,2 @@
+python train_kge.py
+python train_qa.py
