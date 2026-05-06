@@ -1,0 +1,50 @@
+# 1. Create project folder
+mkdir -p /home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE/models
+
+# 2. Place the 3 updated files (rename: drop _3hop suffix)
+#    config_3hop.py      → config.py
+#    dataset_3hop.py     → dataset.py
+#    train_fedv_3hop.py  → train_fedv.py
+
+# 3. Copy unchanged files from your 2-hop experiment
+cp /home/islamm9/ISWC/Client3/Bert+TransE/src/transe_model.py \
+   /home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE/
+cp /home/islamm9/ISWC/Client3/Bert+TransE/src/server.py \
+   /home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE/
+cp /home/islamm9/ISWC/Client3/Bert+TransE/src/evaluate.py \
+   /home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE/
+
+# 4. Copy KGE checkpoints (same KB = no retraining needed)
+cp /home/islamm9/ISWC/Client3/Bert+TransE/models/silo_a_transe.pt \
+   /home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE/models/
+cp /home/islamm9/ISWC/Client3/Bert+TransE/models/silo_b_transe.pt \
+   /home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE/models/
+cp /home/islamm9/ISWC/Client3/Bert+TransE/models/silo_c_transe.pt \
+   /home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE/models/
+cp /home/islamm9/ISWC/Client3/Bert+TransE/models/shared_entity2id.json \
+   /home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE/models/
+
+# 5. Download 3-hop QA files from MetaQA Google Drive
+#    (3-hop/vanilla/qa_train.txt, qa_dev.txt, qa_test.txt)
+#    Place in:
+mkdir -p /home/islamm9/ISWC/Dataset/MetaQA/Client3/data/qa/3-hop
+#    Copy the downloaded files there
+
+# 6. Run
+cd /home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE
+python train_fedv.py
+
+
+
+/home/islamm9/ISWC/3-hop/MetaQA/Bert+TransE/
+├── config.py           ← updated (was config_3hop.py)
+├── dataset.py          ← updated (was dataset_3hop.py)
+├── train_fedv.py       ← updated (was train_fedv_3hop.py)
+├── transe_model.py     ← copied from 2-hop
+├── server.py           ← copied from 2-hop
+├── evaluate.py         ← copied from 2-hop
+└── models/
+    ├── silo_a_transe.pt        ← copied from 2-hop
+    ├── silo_b_transe.pt        ← copied from 2-hop
+    ├── silo_c_transe.pt        ← copied from 2-hop
+    └── shared_entity2id.json   ← copied from 2-hop
