@@ -1,0 +1,4 @@
+cd /home/islamm9/ISWC/Ablation/Centralized/WebQSP
+
+python train_kge.py
+python train_qa.py
