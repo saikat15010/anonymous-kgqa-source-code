@@ -1,0 +1,6 @@
+cd /home/islamm9/ISWC/Ablation/PathQuestion/DistilBert+TransE_no_owl
+
+python split_kb_no_owl_pq2h.py 
+
+python train_kge_distilbert_transe.py
+python train_fedv_distilbert_transe.py
