@@ -1,0 +1,8 @@
+# MetaQA
+cd /home/islamm9/ISWC/Baselines/1_EmbedKGQA/MetaQA/src && python train_fedv.py
+
+# PQ2H
+cd /home/islamm9/ISWC/Baselines/1_EmbedKGQA/PQ2H && python train_fedv.py
+
+# WebQSP
+cd /home/islamm9/ISWC/Baselines/1_EmbedKGQA/WebQSP && python train_fedv.py
