@@ -1,0 +1,3 @@
+cd /home/islamm9/ISWC/Baselines/4_RelChain/MetaQA/src && python train_fedv.py
+cd /home/islamm9/ISWC/Baselines/4_RelChain/PQ2H && python train_fedv.py
+cd /home/islamm9/ISWC/Baselines/4_RelChain/WebQSP && python train_fedv.py
