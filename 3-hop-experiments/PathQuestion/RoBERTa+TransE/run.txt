@@ -1,0 +1,3 @@
+cd /home/islamm9/ISWC/3-hop/PathQuestion/RoBERTa+TransE
+python train_kge_roberta_transe.py
+python train_fedv_roberta_transe.py
