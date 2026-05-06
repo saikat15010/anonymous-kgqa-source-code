@@ -1,0 +1,3 @@
+cd /home/islamm9/ISWC/Ablation/WebQSP/DistilBert+TransE_no_owl
+python train_kge.py
+python train_fedv.py
