@@ -1,0 +1,5 @@
+
+QUICK START
+----------------------------------------------------------------
+cd /home/islamm9/ISWC/Ablation/WebQSP/DistilBert+TransE_no_anchor
+python train_fedv.py
