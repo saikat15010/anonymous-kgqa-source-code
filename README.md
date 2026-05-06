@@ -1,4 +1,3 @@
-# anonymous-kgqa-source-code
 # Anonymized Source Code Repository
 
 This repository contains the anonymized source code for the vertical federated knowledge graph question answering experiments.
