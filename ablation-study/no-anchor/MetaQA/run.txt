@@ -1,0 +1,5 @@
+cd /home/islamm9/ISWC/Ablation/MetaQA/DistilBert+TransE_no_anchor
+
+python train_fedv_distilbert_transe.py
+
+
